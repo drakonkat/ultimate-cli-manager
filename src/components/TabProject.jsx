@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { loadTemplate, upsertProject, removeProject } from '../utils/templateManager';
 import { CLI_LIST, detectAllCLIs } from '../utils/cliDetector';
 import { EDITOR_LIST, detectAllEditors } from '../utils/editorDetector';
@@ -121,6 +122,50 @@ function TabProject({ selectedCLIs }) {
       await invoke('open_in_editor', { editorId, projectPath });
     } catch (e) {
       alert(`Impossibile aprire l'editor: ${e}`);
+    }
+  };
+
+  /**
+   * Apre (o mette a fuoco) la finestra Tauri "terminal" per la coppia
+   * (progetto, CLI) data. Ogni combinazione (projectId, cliId) ha la
+   * SUA finestra dedicata con label `terminal-<projectId>-<cliId>`:
+   *   - Click ripetuto sulla stessa coppia → focus + add tab.
+   *   - Click su un progetto diverso o una CLI diversa → nuova finestra.
+   *
+   * La finestra monta `TerminalWindow` (vedi `src/main.jsx` che fa il
+   * branching su `getCurrentWebviewWindow().label.startsWith('terminal-')`).
+   * I parametri `cli` e `path` passano via URL query string.
+   */
+  const openInIntegratedTerminal = async (cliId, projectPath, projectId, projectName) => {
+    try {
+      const windowLabel = `terminal-${projectId}-${cliId}`;
+      const existing = await WebviewWindow.getByLabel(windowLabel);
+      if (existing) {
+        await existing.setFocus();
+        // Notifica la finestra già aperta di aggiungere una nuova tab.
+        // `TerminalWindow` ascolta questo evento al mount.
+        await existing.emit('terminal:add-tab', {
+          cliId,
+          projectPath,
+        });
+        return;
+      }
+      // Crea la nuova finestra. Stesso bundle, `main.jsx` instrada
+      // su `TerminalWindow` quando il label inizia con `terminal-`.
+      const cliObj = cliById[cliId];
+      const win = new WebviewWindow(windowLabel, {
+        url: `/?cli=${encodeURIComponent(cliId)}&path=${encodeURIComponent(projectPath)}`,
+        title: `${cliObj?.icon || ''} ${cliObj?.name || cliId} — ${projectName} [beta]`,
+        width: 1100,
+        height: 700,
+        minWidth: 600,
+        minHeight: 400,
+      });
+      win.once('tauri://error', (e) => {
+        alert(`Cannot open terminal window: ${e.payload}`);
+      });
+    } catch (e) {
+      alert(`Impossibile aprire il terminale integrato: ${e}`);
     }
   };
 
@@ -311,6 +356,44 @@ function TabProject({ selectedCLIs }) {
                         📂 {ed.icon} {ed.name}
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sezione "Open in integrated terminal (beta)" — apre
+                  una nuova finestra Tauri con tab xterm.js e PTY reale. */}
+              {availableCLIs.length > 0 && (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <div
+                    style={{
+                      fontSize: '0.8em',
+                      opacity: 0.7,
+                      marginBottom: '0.25rem',
+                    }}
+                  >
+                    Open in integrated terminal
+                    <span className="beta-tag">[beta]</span>:
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '0.4rem',
+                    }}
+                  >
+                    {availableCLIs.map((id) => {
+                      const cli = cliById[id];
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => openInIntegratedTerminal(id, p.path, p.id, p.name)}
+                          title={`Open a new Tauri window (or focus the existing one) with a PTY running ${id} in ${p.path}`}
+                        >
+                          🪟 {cli?.icon} {cli?.name || id}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

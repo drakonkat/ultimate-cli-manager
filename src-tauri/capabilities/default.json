@@ -1,10 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window + any integrated terminal-* window (label dinamici, uno per coppia progetto/CLI)",
+  "windows": ["main", "*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus",
     "opener:default",
     "dialog:default"
   ]

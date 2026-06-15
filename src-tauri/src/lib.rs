@@ -1,9 +1,14 @@
 use tauri_plugin_opener::open_url;
+use tauri::Manager;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+mod pty_manager;
+use pty_manager::{PtyState, PtyStateHandle};
 
 // ======================================================================
 // UserPaths: SINGLE SOURCE OF TRUTH per i path utente delle CLI.
@@ -446,12 +451,113 @@ fn open_in_editor(editor_id: &str, project_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ======================================================================
+// PTY (terminale integrato) — 4 command che delegano a `pty_manager::*`.
+// Vedi `src/components/TerminalWindow.jsx` per il consumer frontend.
+// ======================================================================
+
+/// Apre un PTY, spawna PowerShell con `cd <path> ; <cli>` e lancia il
+/// thread reader. Ritorna `Ok(session_id)` se tutto va bene.
+#[tauri::command]
+fn pty_spawn(
+    app: tauri::AppHandle,
+    state: tauri::State<PtyStateHandle>,
+    cli_id: String,
+    project_path: String,
+    cols: u16,
+    rows: u16,
+    window_label: String,
+    session_id: String,
+) -> Result<String, String> {
+    pty_manager::spawn_pty(
+        state.inner(),
+        &app,
+        &cli_id,
+        &project_path,
+        cols,
+        rows,
+        &window_label,
+        &session_id,
+    )?;
+    Ok(session_id)
+}
+
+/// Scrive `data` (input utente) nel PTY della sessione.
+#[tauri::command]
+fn pty_write(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    pty_manager::write_pty(state.inner(), &session_id, &data)
+}
+
+/// Ridimensiona il PTY (chiamato da ResizeObserver su xterm container).
+#[tauri::command]
+fn pty_resize(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty_manager::resize_pty(state.inner(), &session_id, cols, rows)
+}
+
+/// Killa il child della sessione e rimuove dallo state.
+#[tauri::command]
+fn pty_kill(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+) -> Result<(), String> {
+    pty_manager::kill_pty(state.inner(), &session_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp, get_cli_paths, list_dir, run_cli, check_editor, open_in_editor])
+        .on_window_event(|window, event| {
+            // Cleanup PTY quando l'utente chiude una qualsiasi finestra
+            // "terminal" (label dinamico `terminal-<projectId>-<cliId>`,
+            // una finestra per coppia progetto/CLI). Funziona anche su
+            // Alt+F4 / Task Manager perché Rust intercetta l'evento
+            // PRIMA che la finestra venga distrutta.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label().starts_with("terminal-") {
+                    // L'evento arriva sul `Window`, da cui possiamo
+                    // risalire all'AppHandle via `window.app_handle()`.
+                    let app_handle = window.app_handle();
+                    let state = app_handle.state::<PtyStateHandle>();
+                    pty_manager::kill_all_for_window(state.inner(), window.label());
+                }
+            }
+        })
+        .setup(|app| {
+            // Inserisci lo state PTY (Arc<Mutex<PtyState>>) nel container
+            // gestito da Tauri. I command lo recuperano via `tauri::State<PtyStateHandle>`.
+            app.manage::<PtyStateHandle>(Arc::new(Mutex::new(PtyState::default())));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            open_url_cmd,
+            path_exists,
+            check_cli,
+            install_cli,
+            read_file,
+            write_file,
+            ensure_dir,
+            test_mcp,
+            get_cli_paths,
+            list_dir,
+            run_cli,
+            check_editor,
+            open_in_editor,
+            pty_spawn,
+            pty_write,
+            pty_resize,
+            pty_kill
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -175,6 +175,32 @@ html, body {
   50% { opacity: 1; }
 }
 
+/* Status dot variants for the integrated terminal sessions. */
+.status-dot.running {
+  background: #a6e3a1;
+  box-shadow: 0 0 4px #a6e3a1;
+  animation: pulse-running 1.5s ease-in-out infinite;
+}
+
+.status-dot.idle {
+  background: #6c7086;
+}
+
+.status-dot.error {
+  background: #f38ba8;
+  box-shadow: 0 0 4px #f38ba8;
+}
+
+.status-dot.starting {
+  background: #f9e2af;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-running {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .selection-count {
   opacity: 0.8;
 }
@@ -1105,6 +1131,97 @@ html, body {
 ::-webkit-scrollbar-thumb {
   background: #313244;
   border-radius: 4px;
+}
+
+/* === Integrated Terminal Window === */
+.terminal-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #11111b;
+  color: #cdd6f4;
+  overflow: hidden;
+}
+
+.terminal-tab-bar {
+  display: flex;
+  background: #1e1e2e;
+  border-bottom: 1px solid #313244;
+  padding: 6px 8px;
+  gap: 4px;
+  overflow-x: auto;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #313244;
+  color: #a6adc8;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  user-select: none;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.terminal-tab:hover {
+  background: #3b3d52;
+}
+
+.terminal-tab.active {
+  background: #45475a;
+  color: #cdd6f4;
+  border-color: #89b4fa;
+}
+
+.terminal-tab .tab-close {
+  opacity: 0.5;
+  padding: 0 6px;
+  border-radius: 2px;
+  margin-left: 2px;
+}
+
+.terminal-tab .tab-close:hover {
+  opacity: 1;
+  color: #f38ba8;
+  background: #313244;
+}
+
+.terminal-add-btn {
+  padding: 6px 10px;
+  background: #313244;
+  color: #a6e3a1;
+  border: 1px solid #45475a;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.terminal-add-btn:hover {
+  background: #3b3d52;
+}
+
+.terminal-container {
+  background: #11111b;
+  overflow: hidden;
+}
+
+.terminal-container.hidden {
+  display: none;
+}
+
+.beta-tag {
+  color: #fab387;
+  font-size: 0.7rem;
+  margin-left: 4px;
+  font-weight: bold;
 }
 
 ::-webkit-scrollbar-thumb:hover {
