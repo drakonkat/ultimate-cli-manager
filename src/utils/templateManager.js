@@ -11,6 +11,7 @@ const DEFAULT_TEMPLATE = {
   character: {
     instructions: '',
   },
+  projects: [],
   _meta: {
     version: 1,
     updatedAt: new Date().toISOString(),
@@ -120,6 +121,46 @@ export async function setCharacter(template, instructions) {
     character: { ...(template.character || {}), instructions: instructions || '' },
   };
   return saveTemplate(next);
+}
+
+/**
+ * Aggiunge o aggiorna un progetto nella tabella projects del template.
+ * Match per id. Se esiste già, preserva `addedAt` originale.
+ *
+ * @param {object} template
+ * @param {{id: string, name: string, path: string, addedAt?: string}} project
+ * @returns {Promise<object>} il template aggiornato (salvato su disco)
+ */
+export async function upsertProject(template, project) {
+  if (!project || !project.id) {
+    throw new Error('upsertProject: project.id obbligatorio');
+  }
+  const existing = (template.projects || []).find((p) => p.id === project.id);
+  const merged = {
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    addedAt: existing?.addedAt || new Date().toISOString(),
+  };
+  const nextProjects = (template.projects || []).filter((p) => p.id !== project.id);
+  nextProjects.push(merged);
+  const next = { ...template, projects: nextProjects };
+  return await saveTemplate(next);
+}
+
+/**
+ * Rimuove un progetto per id dal template.
+ *
+ * @param {object} template
+ * @param {string} projectId
+ * @returns {Promise<object>} il template aggiornato (salvato su disco)
+ */
+export async function removeProject(template, projectId) {
+  const next = {
+    ...template,
+    projects: (template.projects || []).filter((p) => p.id !== projectId),
+  };
+  return await saveTemplate(next);
 }
 
 export { TEMPLATE_PATH, TEMPLATE_DIR };

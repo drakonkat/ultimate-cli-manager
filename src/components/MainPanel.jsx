@@ -5,6 +5,7 @@ import TabAgents from './TabAgents';
 import TabSkills from './TabSkills';
 import TabCharacter from './TabCharacter';
 import TabDocs from './TabDocs';
+import TabProject from './TabProject';
 
 const TABS = [
   { id: 'panoramica', label: 'Overview', icon: '📊' },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'skills', label: 'Skills', icon: '🛠️' },
   { id: 'character', label: 'Character', icon: '💬' },
   { id: 'docs', label: 'Docs (install)', icon: '📚' },
+  { id: 'project', label: 'Project', icon: '📁' },
 ];
 
 function MainPanel({ selectedCLIs }) {
@@ -32,6 +34,8 @@ function MainPanel({ selectedCLIs }) {
         return <TabCharacter selectedCLIs={selectedCLIs} />;
       case 'docs':
         return <TabDocs selectedCLIs={selectedCLIs} />;
+      case 'project':
+        return <TabProject selectedCLIs={selectedCLIs} />;
       default:
         return <TabPanoramica selectedCLIs={selectedCLIs} />;
     }

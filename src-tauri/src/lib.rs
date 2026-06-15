@@ -293,11 +293,165 @@ fn install_cli(cli_id: &str) -> Result<String, String> {
     }
 }
 
+/// Lista di CLI id accettati dal comando `run_cli`. Coincide con
+/// `CLI_LIST` in `src/utils/cliDetector.js` e con i branch di
+/// `check_cli` / `install_cli` nel backend.
+const RUN_CLI_WHITELIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
+
+/// Apre una nuova finestra PowerShell persistente, fa `cd <project_path>`
+/// e lancia il comando della CLI scelta. La finestra resta aperta
+/// (parametro `-NoExit`), così l'utente può continuare a interagire
+/// con la CLI dopo l'avvio.
+///
+/// Usato dalla tab "Project" (`src/components/TabProject.jsx`).
+/// Usa `.spawn()` (non `.output()` come `install_cli`) perché NON
+/// vogliamo bloccare il thread della UI Tauri.
+#[tauri::command]
+fn run_cli(cli_id: &str, project_path: &str) -> Result<(), String> {
+    // 1. Whitelist del cli_id.
+    if !RUN_CLI_WHITELIST.contains(&cli_id) {
+        return Err(format!("CLI sconosciuta: {}", cli_id));
+    }
+
+    // 2. Validazione del path: deve esistere ed essere una directory.
+    let path = Path::new(project_path);
+    if !path.exists() {
+        return Err(format!("Il path non esiste: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Il path non è una directory: {}", project_path));
+    }
+
+    // 3. Comando PowerShell: `cd '<path>'; <cli_id>`. Le singole attorno
+    //    al path gestiscono path con spazi (es. `C:\My Projects\…`).
+    //    `-NoExit` mantiene la finestra aperta dopo `claude`/`kilo`/ecc.
+    let ps_command = format!("cd '{}'; {}", project_path, cli_id);
+
+    Command::new("powershell.exe")
+        .args(["-NoExit", "-Command", &ps_command])
+        .spawn()
+        .map_err(|e| format!("Impossibile avviare PowerShell: {}", e))?;
+
+    Ok(())
+}
+
+/// Mappa editor_id → comando binario. Coincide con `EDITOR_LIST`
+/// in `src/utils/editorDetector.js` (frontend).
+const EDITOR_WHITELIST: &[(&str, &str)] = &[
+    ("vscode",   "code"),
+    ("cursor",   "cursor"),
+    ("intellij", "idea"),
+    ("webstorm", "webstorm"),
+];
+
+/// Controlla se il comando CLI di un editor è disponibile nel PATH.
+/// Su Windows usa `where`, su Unix `which`. Veloce e non blocca la UI.
+#[tauri::command]
+fn check_editor(editor_id: &str) -> bool {
+    let cmd = match EDITOR_WHITELIST.iter().find(|(id, _)| *id == editor_id) {
+        Some((_, c)) => *c,
+        None => return false,
+    };
+
+    #[cfg(target_os = "windows")]
+    let output = Command::new("where").arg(cmd).output();
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("which").arg(cmd).output();
+
+    output.map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Apre il progetto nell'editor/IDE specificato, passando il path come
+/// argomento. L'editor resta in foreground e l'utente può interagire
+/// con la cartella aperta.
+///
+/// Usato dalla tab "Project" (`src/components/TabProject.jsx`) come
+/// alternativa al flusso CLI (che apre una PowerShell). Qui non serve
+/// PowerShell: il comando binario si lancia direttamente.
+#[tauri::command]
+fn open_in_editor(editor_id: &str, project_path: &str) -> Result<(), String> {
+    // 1. Whitelist del editor_id → comando binario.
+    let cmd = match EDITOR_WHITELIST.iter().find(|(id, _)| *id == editor_id) {
+        Some((_, c)) => *c,
+        None => return Err(format!("Editor sconosciuto: {}", editor_id)),
+    };
+
+    // 2. Validazione del path: deve esistere ed essere una directory.
+    let path = Path::new(project_path);
+    if !path.exists() {
+        return Err(format!("Il path non esiste: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Il path non è una directory: {}", project_path));
+    }
+
+    // 2b. Canonicalizza in full path assoluto. Necessario per
+    //     IntelliJ/WebStorm (e altri editor JetBrains) che si aspettano
+    //     un path assoluto tipo `idea "C:\Path\To\Your\Project"`.
+    //     Risolve anche `..` / `.` / symlink, e garantisce quoting
+    //     corretto anche con spazi nel path.
+    let abs_path = fs::canonicalize(path)
+        .map_err(|e| format!("Impossibile risolvere il full path: {}", e))?;
+
+    // 3. Risolvi il comando tramite `where`/`which` per ottenere il path
+    //    completo (es. `C:\Users\...\idea.cmd`). Su Windows `Command::new("idea")`
+    //    non trova il comando se manca l'estensione .cmd; usare il path
+    //    completo risolve il problema.
+    #[cfg(target_os = "windows")]
+    let full_cmd = {
+        let output = Command::new("where").arg(cmd).output()
+            .map_err(|e| format!("Errore probing editor: {}", e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Comando '{}' non trovato nel PATH. Installa l'editor o aggiungilo al PATH.",
+                cmd
+            ));
+        }
+        // Prendi la prima riga (path completo al .cmd o .exe)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.lines().next()
+            .map(|s| s.trim().to_string())
+            .ok_or_else(|| format!("Risposta 'where' vuota per '{}'", cmd))?
+    };
+    #[cfg(not(target_os = "windows"))]
+    let full_cmd = {
+        let output = Command::new("which").arg(cmd).output()
+            .map_err(|e| format!("Errore probing editor: {}", e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Comando '{}' non trovato nel PATH. Installa l'editor o aggiungilo al PATH.",
+                cmd
+            ));
+        }
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+
+    // 4. Spawn: su Windows usa `cmd.exe /c` per eseguire .cmd/.bat;
+    //    su Unix usa il comando direttamente.
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd.exe")
+            .args(["/c", &full_cmd, abs_path.to_str().unwrap_or_default()])
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare '{}': {}", full_cmd, e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new(&full_cmd)
+            .arg(&abs_path)
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare '{}': {}", full_cmd, e))?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp, get_cli_paths, list_dir])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp, get_cli_paths, list_dir, run_cli, check_editor, open_in_editor])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
