@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
-import { CLI_CONFIG_PATHS, mapMCPsToCLI } from './configMapper';
+import { mapMCPsToCLI } from './configMapper';
 import {
   AGENTS_PATHS,
   SKILLS_PATHS,
+  MCP_CONFIG_PATHS,
   CHARACTER_PATHS,
   CHARACTER_JSON_PATHS,
   UCM_INSTRUCTIONS_FILE,
@@ -17,7 +18,7 @@ import {
  * Reads the existing config of a CLI. Returns null if it doesn't exist.
  */
 export async function readCLIConfig(cliId) {
-  const path = CLI_CONFIG_PATHS[cliId];
+  const path = MCP_CONFIG_PATHS[cliId];
   if (!path) return null;
   try {
     const content = await invoke('read_file', { path });
@@ -31,7 +32,7 @@ export async function readCLIConfig(cliId) {
  * Writes the config for a CLI.
  */
 async function writeCLIConfig(cliId, config) {
-  const path = CLI_CONFIG_PATHS[cliId];
+  const path = MCP_CONFIG_PATHS[cliId];
   if (!path) {
     return { ok: false, reason: 'CLI does not support MCP configuration' };
   }
@@ -48,7 +49,7 @@ async function writeCLIConfig(cliId, config) {
  * Result of a single CLI propagation.
  */
 async function propagateToSingleCLI(cliId, mcpServers, overwrite) {
-  if (!CLI_CONFIG_PATHS[cliId]) {
+  if (!MCP_CONFIG_PATHS[cliId]) {
     return { cliId, status: 'skipped', reason: 'CLI does not support MCP' };
   }
 
@@ -105,7 +106,7 @@ export async function propagateToCLIs(selectedCLIs, mcpServers, conflictResoluti
 export async function detectConflicts(selectedCLIs) {
   const conflicts = [];
   for (const cliId of selectedCLIs) {
-    if (!CLI_CONFIG_PATHS[cliId]) continue;
+    if (!MCP_CONFIG_PATHS[cliId]) continue;
     const existing = await readCLIConfig(cliId);
     if (existing !== null) {
       conflicts.push(cliId);

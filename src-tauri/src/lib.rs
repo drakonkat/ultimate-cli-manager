@@ -49,7 +49,9 @@ struct CliPaths {
     skills: HashMap<String, Option<String>>,
     character: HashMap<String, Option<String>>,
     character_json: HashMap<String, Option<String>>,
+    mcp_config: HashMap<String, Option<String>>,
     ucm_instructions: String,
+    ucm_template_dir: String,
 }
 
 /// Espone al frontend JS tutti i path delle CLI risolti a runtime.
@@ -63,7 +65,9 @@ fn get_cli_paths() -> CliPaths {
             skills: HashMap::new(),
             character: HashMap::new(),
             character_json: HashMap::new(),
+            mcp_config: HashMap::new(),
             ucm_instructions: String::new(),
+            ucm_template_dir: String::new(),
         };
     };
 
@@ -96,12 +100,22 @@ fn get_cli_paths() -> CliPaths {
     character_json.insert("opencode".into(), Some(pb(p.home.join(".config").join("opencode").join("opencode.json"))));
     character_json.insert("kilo".into(), Some(pb(p.home.join(".config").join("kilo").join("kilo.jsonc"))));
 
+    // mcp config (path ai file JSON di config MCP per ogni CLI)
+    let mut mcp_config = HashMap::new();
+    mcp_config.insert("claude".into(), Some(pb(p.home.join(".claude.json"))));
+    mcp_config.insert("junie".into(), Some(pb(p.home.join(".junie").join("mcp").join("mcp.json"))));
+    mcp_config.insert("cline".into(), Some(pb(p.home.join(".cline").join("mcp.json"))));
+    mcp_config.insert("kilo".into(), Some(pb(p.home.join(".config").join("kilo").join("kilo.jsonc"))));
+    mcp_config.insert("opencode".into(), Some(pb(p.home.join(".config").join("opencode").join("opencode.json"))));
+
     CliPaths {
         agents,
         skills,
         character,
         character_json,
+        mcp_config,
         ucm_instructions: pb(p.home.join(".ucm").join("instructions.md")),
+        ucm_template_dir: pb(p.home.join(".ucm")),
     }
 }
 

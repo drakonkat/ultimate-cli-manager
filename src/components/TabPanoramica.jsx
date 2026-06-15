@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { loadTemplate } from '../utils/templateManager';
 import { detectAllCLIs, CLI_LIST } from '../utils/cliDetector';
-import { TEMPLATE_PATH } from '../utils/templateManager';
+import { TEMPLATE_DIR } from '../utils/templateManager';
 
 function TabPanoramica({ selectedCLIs }) {
   const [template, setTemplate] = useState(null);
@@ -69,7 +69,7 @@ function TabPanoramica({ selectedCLIs }) {
             </li>
           </ul>
           <p className="card-footer">
-            <code>{TEMPLATE_PATH}</code>
+            <code>{TEMPLATE_DIR()}</code>
           </p>
         </div>
       </div>

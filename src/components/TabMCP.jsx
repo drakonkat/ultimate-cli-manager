@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { loadTemplate, upsertMCP, removeMCP } from '../utils/templateManager';
 import { propagateToCLIs, detectConflicts, readCLIConfig } from '../utils/propagator';
-import { CLI_CONFIG_PATHS } from '../utils/configMapper';
+import { MCP_CONFIG_PATHS } from '../utils/cliPaths';
 
 const EMPTY_FORM = {
   name: '',
@@ -132,14 +132,14 @@ function TabMCP({ selectedCLIs }) {
   const handleReadAll = async () => {
     const results = {};
     for (const cliId of selectedCLIs) {
-      if (!CLI_CONFIG_PATHS[cliId]) {
+      if (!MCP_CONFIG_PATHS[cliId]) {
         results[cliId] = { exists: false, reason: 'CLI does not support MCP' };
         continue;
       }
       const config = await readCLIConfig(cliId);
       results[cliId] = {
         exists: config !== null,
-        path: CLI_CONFIG_PATHS[cliId],
+        path: MCP_CONFIG_PATHS[cliId],
         config,
       };
     }
@@ -148,7 +148,7 @@ function TabMCP({ selectedCLIs }) {
 
   const handleImportFromCLI = async () => {
     const cliId = importSourceCli;
-    const path = CLI_CONFIG_PATHS[cliId];
+    const path = MCP_CONFIG_PATHS[cliId];
     if (!path) {
       alert('CLI does not support MCP');
       return;

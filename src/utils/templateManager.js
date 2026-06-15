@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import { UCM_TEMPLATE_DIR } from './cliPaths.js';
 
-const TEMPLATE_DIR = 'C:\\Users\\mauro\\.ucm';
-const TEMPLATE_PATH = `${TEMPLATE_DIR}\\template.json`;
+const TEMPLATE_DIR = () => UCM_TEMPLATE_DIR;
+const TEMPLATE_PATH = () => `${UCM_TEMPLATE_DIR}\\template.json`;
 
 const DEFAULT_TEMPLATE = {
   mcp: {},
@@ -21,7 +22,7 @@ const DEFAULT_TEMPLATE = {
  */
 export async function loadTemplate() {
   try {
-    const content = await invoke('read_file', { path: TEMPLATE_PATH });
+    const content = await invoke('read_file', { path: TEMPLATE_PATH() });
     return JSON.parse(content);
   } catch (e) {
     console.log('Template non trovato, creo default');
@@ -34,7 +35,7 @@ export async function loadTemplate() {
  * Salva il template su disco.
  */
 export async function saveTemplate(template) {
-  await invoke('ensure_dir', { path: TEMPLATE_DIR });
+  await invoke('ensure_dir', { path: TEMPLATE_DIR() });
   const toSave = {
     ...template,
     _meta: {
@@ -44,7 +45,7 @@ export async function saveTemplate(template) {
     },
   };
   await invoke('write_file', {
-    path: TEMPLATE_PATH,
+    path: TEMPLATE_PATH(),
     content: JSON.stringify(toSave, null, 2),
   });
   return toSave;
@@ -121,4 +122,4 @@ export async function setCharacter(template, instructions) {
   return saveTemplate(next);
 }
 
-export { TEMPLATE_PATH };
+export { TEMPLATE_PATH, TEMPLATE_DIR };

@@ -3982,7 +3982,7 @@ dependencies = [
 
 [[package]]
 name = "ultimate-cli-manager"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs 5.0.1",
  "serde",

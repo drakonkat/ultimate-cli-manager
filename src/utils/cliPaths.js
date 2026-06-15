@@ -24,11 +24,13 @@ export const AGENTS_PATHS = {};
 export const SKILLS_PATHS = {};
 export const CHARACTER_PATHS = {};
 export const CHARACTER_JSON_PATHS = {};
+export const MCP_CONFIG_PATHS = {};
 
 // UCM_INSTRUCTIONS_FILE è un singolo path (non una mappa), ma cambia dopo init.
 // Usiamo `let` + export: ES modules hanno live bindings, quindi chi importa
 // vedrà il valore aggiornato quando viene riassegnato.
 export let UCM_INSTRUCTIONS_FILE = '';
+export let UCM_TEMPLATE_DIR = '';
 
 let _initialized = false;
 let _initPromise = null;
@@ -48,7 +50,9 @@ export function initCliPaths() {
       Object.assign(SKILLS_PATHS, data.skills || {});
       Object.assign(CHARACTER_PATHS, data.character || {});
       Object.assign(CHARACTER_JSON_PATHS, data.characterJson || {});
+      Object.assign(MCP_CONFIG_PATHS, data.mcpConfig || {});
       UCM_INSTRUCTIONS_FILE = data.ucmInstructions || '';
+      UCM_TEMPLATE_DIR = data.ucmTemplateDir || '';
       _initialized = true;
       return data;
     });

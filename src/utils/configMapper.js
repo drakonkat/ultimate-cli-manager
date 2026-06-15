@@ -15,28 +15,6 @@
  * }
  */
 
-// Path dei file config su Windows (verificati per il tuo PC)
-export const CLI_CONFIG_PATHS = {
-  // Claude Code: MCP in ~/.claude.json (root home)
-  claude: 'C:\\Users\\mauro\\.claude.json',
-  // Junie CLI: ~/.junie/mcp/mcp.json (utente) oppure <project>/.junie/mcp/mcp.json
-  junie: 'C:\\Users\\mauro\\.junie\\mcp\\mcp.json',
-  // Cline CLI: ~/.cline/mcp.json (root, non in data/settings)
-  cline: 'C:\\Users\\mauro\\.cline\\mcp.json',
-  // Kilo CLI: ~/.config/kilo/kilo.jsonc
-  kilo: 'C:\\Users\\mauro\\.config\\kilo\\kilo.jsonc',
-  // OpenCode CLI: ~/.config/opencode/opencode.json
-  opencode: 'C:\\Users\\mauro\\.config\\opencode\\opencode.json',
-};
-
-export const CLI_CONFIG_LABELS = {
-  claude: '~/.claude.json',
-  junie: '~/.junie/mcp/mcp.json',
-  cline: '~/.cline/mcp.json',
-  kilo: '~/.config/kilo/kilo.jsonc',
-  opencode: '~/.config/opencode/opencode.json',
-};
-
 /**
  * Converte un MCP server dal formato template al formato Cline.
  * Cline usa: { mcpServers: { name: { command, args, env, disabled, autoApprove } } }
