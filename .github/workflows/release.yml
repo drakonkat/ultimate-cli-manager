@@ -59,9 +59,22 @@ jobs:
           prerelease: false
           args: --bundles msi,nsis
 
+      - name: Locate and prepare portable exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path src-tauri/target -Recurse -Filter "ultimate-cli-manager.exe" -File |
+                Where-Object { $_.DirectoryName -notmatch '[\\/](deps|build)[\\/]' } |
+                Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "ultimate-cli-manager.exe non trovato in src-tauri/target"
+            exit 1
+          }
+          Write-Host "Trovato exe: $($exe.FullName)"
+          Copy-Item -Path $exe.FullName -Destination ucm_portable.exe -Force
+          Get-Item ucm_portable.exe | Select-Object FullName, Length
+
       - name: Upload portable exe
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/ucm.exe
-          fail_on_unmatched_files: false
-          asset_name: ucm_portable.exe
+          files: ucm_portable.exe
+          fail_on_unmatched_files: true
