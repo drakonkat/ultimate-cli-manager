@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: write
 
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -32,13 +32,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
-
-      - name: Install mingw-w64
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -48,7 +41,7 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Tauri app (Windows cross-compile)
+      - name: Build Tauri app (Windows)
         id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
@@ -64,14 +57,11 @@ jobs:
             See the [changelog](./CHANGELOG.md) for details.
           releaseDraft: true
           prerelease: false
-          args: --target x86_64-pc-windows-gnu
+          args: --bundles msi,nsis
 
       - name: Upload portable exe
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ steps.tauri.outputs.upload_url }}
-          asset_path: src-tauri/target/x86_64-pc-windows-gnu/release/ucm.exe
+          files: src-tauri/target/release/ucm.exe
+          fail_on_unmatched_files: false
           asset_name: ucm_portable.exe
-          asset_content_type: application/vnd.microsoft.portable-executable
