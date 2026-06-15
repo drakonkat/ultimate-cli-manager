@@ -64,7 +64,7 @@ jobs:
             See the [changelog](./CHANGELOG.md) for details.
           releaseDraft: true
           prerelease: false
-          args: --target x86_64-pc-windows-gnu --bundles msi,nsis
+          args: --target x86_64-pc-windows-gnu
 
       - name: Upload portable exe
         uses: actions/upload-release-asset@v1
