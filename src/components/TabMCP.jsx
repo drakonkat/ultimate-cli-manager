@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { loadTemplate, upsertMCP, removeMCP } from '../utils/templateManager';
 import { propagateToCLIs, detectConflicts, readCLIConfig } from '../utils/propagator';
 import { CLI_CONFIG_PATHS } from '../utils/configMapper';
@@ -34,6 +35,9 @@ function serializeEnv(env) {
   return Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
 }
 
+// CLI che supportano MCP come sorgente di import
+const IMPORTABLE_CLIS_MCP = ['claude', 'junie', 'cline'];
+
 function TabMCP({ selectedCLIs }) {
   const [template, setTemplate] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -42,6 +46,7 @@ function TabMCP({ selectedCLIs }) {
   const [propagationResults, setPropagationResults] = useState(null);
   const [conflictDialog, setConflictDialog] = useState(null);
   const [readResults, setReadResults] = useState(null);
+  const [importSourceCli, setImportSourceCli] = useState('claude');
 
   useEffect(() => {
     loadTemplate().then(setTemplate);
@@ -85,18 +90,18 @@ function TabMCP({ selectedCLIs }) {
   };
 
   const handleDelete = async (name) => {
-    if (!confirm(`Eliminare MCP "${name}" dal template?`)) return;
+    if (!confirm(`Delete MCP "${name}" from template?`)) return;
     const updated = await removeMCP(template, name);
     setTemplate(updated);
   };
 
   const handlePropagate = async () => {
     if (selectedCLIs.length === 0) {
-      alert('Seleziona almeno una CLI nella sidebar');
+      alert('Select at least one CLI in the sidebar');
       return;
     }
     if (Object.keys(template.mcp).length === 0) {
-      alert('Template MCP vuoto. Aggiungi almeno un server.');
+      alert('MCP template is empty. Add at least one server.');
       return;
     }
 
@@ -128,7 +133,7 @@ function TabMCP({ selectedCLIs }) {
     const results = {};
     for (const cliId of selectedCLIs) {
       if (!CLI_CONFIG_PATHS[cliId]) {
-        results[cliId] = { exists: false, reason: 'CLI non supporta MCP' };
+        results[cliId] = { exists: false, reason: 'CLI does not support MCP' };
         continue;
       }
       const config = await readCLIConfig(cliId);
@@ -141,33 +146,76 @@ function TabMCP({ selectedCLIs }) {
     setReadResults(results);
   };
 
-  if (!template) return <div className="tab-panel"><p>Caricamento template...</p></div>;
+  const handleImportFromCLI = async () => {
+    const cliId = importSourceCli;
+    const path = CLI_CONFIG_PATHS[cliId];
+    if (!path) {
+      alert('CLI does not support MCP');
+      return;
+    }
+    try {
+      const content = await invoke('read_file', { path });
+      const config = JSON.parse(content);
+      const mcpServers = config.mcpServers || {};
+      if (Object.keys(mcpServers).length === 0) {
+        alert('No MCP server found in ' + path);
+        return;
+      }
+      let updated = { ...template };
+      let imported = 0;
+      for (const [name, server] of Object.entries(mcpServers)) {
+        const isRemote = !!(server.url || (server.command && String(server.command).startsWith('http')));
+        const serverConfig = isRemote
+          ? {
+              type: 'remote',
+              url: server.url || '',
+              enabled: server.enabled !== false,
+            }
+          : {
+              type: 'local',
+              command: server.args
+                ? [server.command, ...server.args]
+                : server.command || '',
+              env: server.env || {},
+              enabled: server.enabled !== false,
+            };
+        updated = await upsertMCP(updated, name, serverConfig);
+        imported++;
+      }
+      setTemplate(updated);
+      alert(`Imported ${imported} MCP server(s) from ${cliId}`);
+    } catch (e) {
+      alert('Import error: ' + e);
+    }
+  };
+
+  if (!template) return <div className="tab-panel"><p>Loading template...</p></div>;
 
   const mcpEntries = Object.entries(template.mcp || {});
 
   return (
     <div className="tab-panel">
-      <h3>🔌 Gestione MCP</h3>
+      <h3>🔌 MCP Management</h3>
       <p>
-        Template: {mcpEntries.length} server | CLI selezionate: {selectedCLIs.length}
+        Template: {mcpEntries.length} server(s) | Selected CLIs: {selectedCLIs.length}
       </p>
 
       <form onSubmit={handleSubmit} className="mcp-form">
-        <h4>{editingName ? `Modifica: ${editingName}` : 'Nuovo MCP Server'}</h4>
+        <h4>{editingName ? `Edit: ${editingName}` : 'New MCP Server'}</h4>
         <div className="form-row">
           <label>
-            Nome
+            Name
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="es. github"
+              placeholder="e.g. github"
               disabled={!!editingName}
               required
             />
           </label>
           <label>
-            Tipo
+            Type
             <select
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
@@ -182,14 +230,14 @@ function TabMCP({ selectedCLIs }) {
               checked={form.enabled}
               onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
             />
-            Abilitato
+            Enabled
           </label>
         </div>
 
         {form.type === 'local' ? (
           <>
             <label>
-              Comando
+              Command
               <input
                 type="text"
                 value={form.command}
@@ -198,7 +246,7 @@ function TabMCP({ selectedCLIs }) {
               />
             </label>
             <label>
-              Environment (KEY=value, una per riga)
+              Environment (KEY=value, one per line)
               <textarea
                 value={form.envText}
                 onChange={(e) => setForm({ ...form, envText: e.target.value })}
@@ -221,7 +269,7 @@ function TabMCP({ selectedCLIs }) {
 
         <div className="form-actions">
           <button type="submit" className="btn-primary">
-            {editingName ? 'Aggiorna' : 'Aggiungi'}
+            {editingName ? 'Update' : 'Add'}
           </button>
           {editingName && (
             <button
@@ -231,15 +279,15 @@ function TabMCP({ selectedCLIs }) {
                 setEditingName(null);
               }}
             >
-              Annulla
+              Cancel
             </button>
           )}
         </div>
       </form>
 
-      <h4>Server nel template</h4>
+      <h4>Servers in template</h4>
       {mcpEntries.length === 0 ? (
-        <p className="empty-state">Nessun server MCP. Aggiungine uno sopra.</p>
+        <p className="empty-state">No MCP servers. Add one above.</p>
       ) : (
         <ul className="mcp-list">
           {mcpEntries.map(([name, server]) => (
@@ -249,7 +297,7 @@ function TabMCP({ selectedCLIs }) {
                 <span className={`mcp-type ${server.type || 'local'}`}>
                   {server.type || 'local'}
                 </span>
-                {!server.enabled && <span className="mcp-disabled">disabilitato</span>}
+                {!server.enabled && <span className="mcp-disabled">disabled</span>}
                 <code className="mcp-cmd">
                   {server.type === 'remote'
                     ? server.url
@@ -271,27 +319,42 @@ function TabMCP({ selectedCLIs }) {
           onClick={handlePropagate}
           disabled={propagating || selectedCLIs.length === 0}
         >
-          {propagating ? '⏳ Propagazione...' : `🚀 Propaga a ${selectedCLIs.length} CLI`}
+          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${selectedCLIs.length} CLI(s)`}
         </button>
         <button
           className="btn-read"
           onClick={handleReadAll}
           disabled={selectedCLIs.length === 0}
         >
-          📂 Leggi config esistenti
+          📂 Read existing configs
+        </button>
+        <select
+          value={importSourceCli}
+          onChange={(e) => setImportSourceCli(e.target.value)}
+          style={{ marginRight: '0.5rem' }}
+        >
+          {IMPORTABLE_CLIS_MCP.map((id) => (
+            <option key={id} value={id}>{id}</option>
+          ))}
+        </select>
+        <button
+          className="btn-import"
+          onClick={handleImportFromCLI}
+        >
+          📥 Import from {importSourceCli}
         </button>
       </div>
 
       {conflictDialog && (
         <div className="conflict-dialog">
-          <h4>⚠️ Conflitti rilevati</h4>
-          <p>Queste CLI hanno già un file config esistente:</p>
+          <h4>⚠️ Conflicts detected</h4>
+          <p>These CLIs already have an existing config file:</p>
           <ul>
             {conflictDialog.conflicts.map((cliId) => (
-              <li key={cliId}><strong>{cliId}</strong> — config già presente</li>
+              <li key={cliId}><strong>{cliId}</strong> — config already present</li>
             ))}
           </ul>
-          <p>Sovrascrivere le config esistenti?</p>
+          <p>Overwrite existing configs?</p>
           <div className="conflict-actions">
             <button
               className="btn-overwrite-all"
@@ -301,7 +364,7 @@ function TabMCP({ selectedCLIs }) {
                 handleConflictResolve(r);
               }}
             >
-              Sovrascrivi tutte
+              Overwrite all
             </button>
             <button
               className="btn-keep-all"
@@ -311,16 +374,16 @@ function TabMCP({ selectedCLIs }) {
                 handleConflictResolve(r);
               }}
             >
-              Mantieni tutte
+              Keep all
             </button>
-            <button onClick={() => setConflictDialog(null)}>Annulla</button>
+            <button onClick={() => setConflictDialog(null)}>Cancel</button>
           </div>
         </div>
       )}
 
       {propagationResults && (
         <div className="propagation-results">
-          <h4>Risultato propagazione:</h4>
+          <h4>Propagation result:</h4>
           <ul>
             {propagationResults.map((r) => (
               <li key={r.cliId} className={`result-${r.status}`}>
@@ -335,11 +398,11 @@ function TabMCP({ selectedCLIs }) {
 
       {readResults && (
         <div className="read-results">
-          <h4>Config esistenti lette:</h4>
+          <h4>Existing configs read:</h4>
           <ul>
             {Object.entries(readResults).map(([cliId, info]) => (
               <li key={cliId} className={info.exists ? 'exists' : 'missing'}>
-                <strong>{cliId}</strong>: {info.exists ? '✓ Esiste' : '✗ Non esiste'}
+                <strong>{cliId}</strong>: {info.exists ? '✓ Exists' : '✗ Does not exist'}
                 {info.path && <code> ({info.path})</code>}
                 {info.config && (
                   <pre>{JSON.stringify(info.config, null, 2)}</pre>

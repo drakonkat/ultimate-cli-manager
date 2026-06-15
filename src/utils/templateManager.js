@@ -68,4 +68,57 @@ export async function removeMCP(template, name) {
   return saveTemplate(next);
 }
 
+/**
+ * Aggiunge o aggiorna un agent nel template.
+ */
+export async function upsertAgent(template, name, agent) {
+  const next = { ...template, agents: { ...(template.agents || {}) } };
+  next.agents[name] = {
+    description: agent.description || '',
+    content: agent.content || '',
+  };
+  return saveTemplate(next);
+}
+
+/**
+ * Rimuove un agent dal template.
+ */
+export async function removeAgent(template, name) {
+  const next = { ...template, agents: { ...(template.agents || {}) } };
+  delete next.agents[name];
+  return saveTemplate(next);
+}
+
+/**
+ * Aggiunge o aggiorna una skill nel template.
+ */
+export async function upsertSkill(template, name, skill) {
+  const next = { ...template, skills: { ...(template.skills || {}) } };
+  next.skills[name] = {
+    description: skill.description || '',
+    content: skill.content || '',
+  };
+  return saveTemplate(next);
+}
+
+/**
+ * Rimuove una skill dal template.
+ */
+export async function removeSkill(template, name) {
+  const next = { ...template, skills: { ...(template.skills || {}) } };
+  delete next.skills[name];
+  return saveTemplate(next);
+}
+
+/**
+ * Aggiorna le istruzioni del character (testo libero markdown).
+ */
+export async function setCharacter(template, instructions) {
+  const next = {
+    ...template,
+    character: { ...(template.character || {}), instructions: instructions || '' },
+  };
+  return saveTemplate(next);
+}
+
 export { TEMPLATE_PATH };

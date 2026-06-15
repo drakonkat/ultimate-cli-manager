@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#cba6f7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5c2e7;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="cheek" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#f5c2e7;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#f5c2e7;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
+
+  <!-- Cat ears (outer dark) - more triangular, on top of head -->
+  <path d="M 100 235 L 150 90 L 210 220 Z" fill="#1e1e2e"/>
+  <path d="M 412 235 L 362 90 L 302 220 Z" fill="#1e1e2e"/>
+  <!-- Cat ears (inner pink) -->
+  <path d="M 125 220 L 152 125 L 188 215 Z" fill="#f5c2e7"/>
+  <path d="M 387 220 L 360 125 L 324 215 Z" fill="#f5c2e7"/>
+
+  <!-- MAID HEADBAND - prominent white band wrapping the head -->
+  <!-- Back of headband visible behind face -->
+  <ellipse cx="256" cy="280" rx="200" ry="55" fill="#1e1e2e" opacity="0"/>
+
+  <!-- White frilly headband across forehead -->
+  <path d="M 110 270
+           Q 130 250 160 250
+           L 352 250
+           Q 382 250 402 270
+           L 402 305
+           Q 382 320 352 320
+           L 160 320
+           Q 130 320 110 305 Z"
+        fill="#cdd6f4" stroke="#1e1e2e" stroke-width="3"/>
+
+  <!-- Frill ruffle pattern on headband -->
+  <g fill="#cdd6f4" stroke="#1e1e2e" stroke-width="2">
+    <ellipse cx="140" cy="285" rx="15" ry="20"/>
+    <ellipse cx="175" cy="285" rx="15" ry="20"/>
+    <ellipse cx="210" cy="285" rx="15" ry="20"/>
+    <ellipse cx="245" cy="285" rx="15" ry="20"/>
+    <ellipse cx="280" cy="285" rx="15" ry="20"/>
+    <ellipse cx="315" cy="285" rx="15" ry="20"/>
+    <ellipse cx="350" cy="285" rx="15" ry="20"/>
+    <ellipse cx="385" cy="285" rx="15" ry="20"/>
+  </g>
+
+  <!-- Bow on top of head (center) -->
+  <g transform="translate(256 235)">
+    <!-- Bow loops -->
+    <path d="M -45 0 Q -50 -25 -25 -18 Q -10 -10 -5 0 Q -10 10 -25 18 Q -50 25 -45 0 Z" fill="#f38ba8" stroke="#1e1e2e" stroke-width="2.5"/>
+    <path d="M 45 0 Q 50 -25 25 -18 Q 10 -10 5 0 Q 10 10 25 18 Q 50 25 45 0 Z" fill="#f38ba8" stroke="#1e1e2e" stroke-width="2.5"/>
+    <!-- Bow tails -->
+    <path d="M -8 5 L -25 35 L -15 38 L -2 12 Z" fill="#f5c2e7" stroke="#1e1e2e" stroke-width="2"/>
+    <path d="M 8 5 L 25 35 L 15 38 L 2 12 Z" fill="#f5c2e7" stroke="#1e1e2e" stroke-width="2"/>
+    <!-- Bow center knot -->
+    <ellipse cx="0" cy="0" rx="10" ry="8" fill="#1e1e2e"/>
+  </g>
+
+  <!-- Cat face (round) - positioned below the headband -->
+  <ellipse cx="256" cy="370" rx="145" ry="120" fill="#f5e0dc"/>
+
+  <!-- Cheek blush -->
+  <ellipse cx="180" cy="395" rx="32" ry="18" fill="url(#cheek)"/>
+  <ellipse cx="332" cy="395" rx="32" ry="18" fill="url(#cheek)"/>
+
+  <!-- Eyes (closed happy ^_^) -->
+  <path d="M 188 360 Q 203 340 218 360" fill="none" stroke="#1e1e2e" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 294 360 Q 309 340 324 360" fill="none" stroke="#1e1e2e" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Cute small mouth -->
+  <ellipse cx="256" cy="425" rx="11" ry="7" fill="#f38ba8"/>
+  <path d="M 250 427 Q 256 435 262 427" fill="none" stroke="#1e1e2e" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Tiny nose -->
+  <path d="M 252 405 L 260 405 L 256 411 Z" fill="#1e1e2e"/>
+
+  <!-- Whiskers -->
+  <line x1="125" y1="410" x2="175" y2="405" stroke="#1e1e2e" stroke-width="3" stroke-linecap="round"/>
+  <line x1="125" y1="425" x2="175" y2="420" stroke="#1e1e2e" stroke-width="3" stroke-linecap="round"/>
+  <line x1="387" y1="410" x2="337" y2="405" stroke="#1e1e2e" stroke-width="3" stroke-linecap="round"/>
+  <line x1="387" y1="425" x2="337" y2="420" stroke="#1e1e2e" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Sparkles -->
+  <g fill="#f9e2af" opacity="0.9">
+    <path d="M 50 160 L 55 175 L 70 180 L 55 185 L 50 200 L 45 185 L 30 180 L 45 175 Z"/>
+    <path d="M 462 160 L 467 175 L 482 180 L 467 185 L 462 200 L 457 185 L 442 180 L 457 175 Z"/>
+    <path d="M 40 320 L 43 330 L 53 333 L 43 336 L 40 346 L 37 336 L 27 333 L 37 330 Z"/>
+    <path d="M 472 320 L 475 330 L 485 333 L 475 336 L 472 346 L 469 336 L 459 333 L 469 330 Z"/>
+  </g>
+</svg>

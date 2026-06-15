@@ -23,13 +23,13 @@ function TabDocs({ selectedCLIs }) {
 
   const handleInstall = async (cliId) => {
     setInstalling(cliId);
-    setOutput(`Installazione ${cliId} in corso...`);
+    setOutput(`Installing ${cliId} in progress...`);
     try {
       const result = await installCLI(cliId);
       setOutput(result);
       await refreshStatus();
     } catch (e) {
-      setOutput(`Errore: ${e}`);
+      setOutput(`Error: ${e}`);
     } finally {
       setInstalling(null);
     }
@@ -42,10 +42,10 @@ function TabDocs({ selectedCLIs }) {
   return (
     <div className="tab-panel">
       <div className="docs-header">
-        <h3>📚 Documentazione & Installazione</h3>
-        <button onClick={refreshStatus} className="btn-refresh">↻ Rileva stato</button>
+        <h3>📚 Documentation & Installation</h3>
+        <button onClick={refreshStatus} className="btn-refresh">↻ Detect status</button>
       </div>
-      <p>CLI installate: {Object.values(installStatus).filter(Boolean).length} / 5</p>
+      <p>CLIs installed: {Object.values(installStatus).filter(Boolean).length} / 5</p>
 
       <div className="docs-grid">
         {filteredDocs.map((doc) => {
@@ -58,7 +58,7 @@ function TabDocs({ selectedCLIs }) {
                 <span className="doc-name">{doc.name}</span>
                 <span
                   className={`status-dot ${installed === true ? 'installed' : installed === false ? 'not-installed' : 'unknown'}`}
-                  title={installed === true ? 'Installata' : installed === false ? 'Non installata' : 'Verifica...'}
+                  title={installed === true ? 'Installed' : installed === false ? 'Not installed' : 'Checking...'}
                 />
               </div>
               <div className="doc-actions">
@@ -74,11 +74,11 @@ function TabDocs({ selectedCLIs }) {
                     onClick={() => handleInstall(doc.id)}
                     disabled={isInstalling}
                   >
-                    {isInstalling ? '⏳...' : '📥 Installa'}
+                    {isInstalling ? '⏳...' : '📥 Install'}
                   </button>
                 )}
                 {installed === true && (
-                  <span className="badge-installed">✓ Installata</span>
+                  <span className="badge-installed">✓ Installed</span>
                 )}
                 {installed === undefined && (
                   <span className="badge-unknown">?</span>
@@ -91,7 +91,7 @@ function TabDocs({ selectedCLIs }) {
 
       {output && (
         <div className="install-output">
-          <h4>Output installazione:</h4>
+          <h4>Installation output:</h4>
           <pre>{output}</pre>
         </div>
       )}

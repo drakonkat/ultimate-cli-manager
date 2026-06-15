@@ -7,12 +7,12 @@ import TabCharacter from './TabCharacter';
 import TabDocs from './TabDocs';
 
 const TABS = [
-  { id: 'panoramica', label: 'Panoramica', icon: '📊' },
+  { id: 'panoramica', label: 'Overview', icon: '📊' },
   { id: 'mcp', label: 'MCP', icon: '🔌' },
-  { id: 'agents', label: 'Agenti', icon: '🤖' },
+  { id: 'agents', label: 'Agents', icon: '🤖' },
   { id: 'skills', label: 'Skills', icon: '🛠️' },
-  { id: 'character', label: 'Carattere', icon: '💬' },
-  { id: 'docs', label: 'Docs', icon: '📚' },
+  { id: 'character', label: 'Character', icon: '💬' },
+  { id: 'docs', label: 'Docs (install)', icon: '📚' },
 ];
 
 function MainPanel({ selectedCLIs }) {

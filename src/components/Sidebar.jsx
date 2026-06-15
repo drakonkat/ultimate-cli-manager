@@ -43,7 +43,7 @@ function Sidebar({ selectedCLIs, onToggleCLI, onSelectAll, onDeselectAll }) {
                 <span className="cli-name">{cli.name}</span>
                 <span
                   className={`status-dot ${installed === true ? 'installed' : installed === false ? 'not-installed' : 'unknown'}`}
-                  title={installed === true ? 'Installata' : installed === false ? 'Non installata' : 'Verifica...'}
+                  title={installed === true ? 'Installed' : installed === false ? 'Not installed' : 'Checking...'}
                 />
               </label>
             </li>

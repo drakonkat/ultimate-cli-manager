@@ -1,8 +1,109 @@
 use tauri_plugin_opener::open_url;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
 use std::time::Duration;
+
+// ======================================================================
+// UserPaths: SINGLE SOURCE OF TRUTH per i path utente delle CLI.
+// Usato sia da `check_cli` (verifica installazione) sia da `get_cli_paths`
+// (path completi esposti al frontend per agents/skills/character).
+// ======================================================================
+struct UserPaths {
+    /// %USERPROFILE% su Windows, $HOME su Unix
+    home: PathBuf,
+    /// %APPDATA% su Windows (Roaming), $XDG_CONFIG_HOME su Linux
+    roaming: PathBuf,
+    /// %LOCALAPPDATA% su Windows, $XDG_DATA_HOME su Linux
+    local: PathBuf,
+}
+
+impl UserPaths {
+    fn resolve() -> Option<Self> {
+        let home = dirs::home_dir()?;
+        let roaming = dirs::config_dir()
+            .unwrap_or_else(|| home.join("AppData").join("Roaming"));
+        let local = dirs::data_local_dir()
+            .unwrap_or_else(|| home.join("AppData").join("Local"));
+        Some(Self { home, roaming, local })
+    }
+}
+
+/// Converte un PathBuf in String per la serializzazione JSON.
+fn pb(p: PathBuf) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+/// Struttura serializzata restituita da `get_cli_paths` e consumata dal
+/// frontend JS (`src/utils/cliPaths.js`) per popolare le costanti
+/// `AGENTS_PATHS`, `SKILLS_PATHS`, ecc.
+///
+/// Le chiavi interne sono i CLI id (`claude`, `junie`, `cline`, `kilo`,
+/// `opencode`); il valore è `Some(path)` o `None` se la CLI non supporta
+/// quella categoria.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliPaths {
+    agents: HashMap<String, Option<String>>,
+    skills: HashMap<String, Option<String>>,
+    character: HashMap<String, Option<String>>,
+    character_json: HashMap<String, Option<String>>,
+    ucm_instructions: String,
+}
+
+/// Espone al frontend JS tutti i path delle CLI risolti a runtime.
+/// È il SINGLE SOURCE OF TRUTH lato Rust — il JS non duplica nessuna
+/// stringa di path, fa solo `Object.assign` sulla cache locale.
+#[tauri::command]
+fn get_cli_paths() -> CliPaths {
+    let Some(p) = UserPaths::resolve() else {
+        return CliPaths {
+            agents: HashMap::new(),
+            skills: HashMap::new(),
+            character: HashMap::new(),
+            character_json: HashMap::new(),
+            ucm_instructions: String::new(),
+        };
+    };
+
+    // agents/
+    let mut agents = HashMap::new();
+    agents.insert("claude".into(), Some(pb(p.home.join(".claude").join("agents"))));
+    agents.insert("opencode".into(), Some(pb(p.home.join(".config").join("opencode").join("agents"))));
+    agents.insert("kilo".into(), Some(pb(p.home.join(".config").join("kilo").join("agents"))));
+    agents.insert("junie".into(), Some(pb(p.home.join(".junie").join("agents"))));
+    agents.insert("cline".into(), None);
+
+    // skills/
+    let mut skills = HashMap::new();
+    skills.insert("claude".into(), Some(pb(p.home.join(".claude").join("skills"))));
+    skills.insert("opencode".into(), Some(pb(p.home.join(".config").join("opencode").join("skills"))));
+    skills.insert("kilo".into(), Some(pb(p.home.join(".config").join("kilo").join("skills"))));
+    skills.insert("junie".into(), Some(pb(p.home.join(".junie").join("skills"))));
+    skills.insert("cline".into(), None);
+
+    // character file (path diretto al file libero)
+    let mut character = HashMap::new();
+    character.insert("claude".into(), Some(pb(p.home.join(".claude").join("CLAUDE.md"))));
+    character.insert("junie".into(), Some(pb(p.home.join(".junie").join("guidelines.md"))));
+    character.insert("cline".into(), Some(pb(p.home.join(".cline").join("character.md"))));
+    character.insert("opencode".into(), None); // usa opencode.json campo instructions
+    character.insert("kilo".into(), None);     // usa kilo.jsonc campo instructions
+
+    // character json (file di config con campo `instructions`)
+    let mut character_json = HashMap::new();
+    character_json.insert("opencode".into(), Some(pb(p.home.join(".config").join("opencode").join("opencode.json"))));
+    character_json.insert("kilo".into(), Some(pb(p.home.join(".config").join("kilo").join("kilo.jsonc"))));
+
+    CliPaths {
+        agents,
+        skills,
+        character,
+        character_json,
+        ucm_instructions: pb(p.home.join(".ucm").join("instructions.md")),
+    }
+}
 
 #[tauri::command]
 fn open_url_cmd(url: &str) -> Result<(), String> {
@@ -31,6 +132,21 @@ fn write_file(path: &str, content: &str) -> Result<(), String> {
 #[tauri::command]
 fn ensure_dir(path: &str) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_dir(path: &str) -> Result<Vec<String>, String> {
+    let entries = fs::read_dir(path).map_err(|e| format!("Errore lettura directory {}: {}", path, e))?;
+    let mut names: Vec<String> = Vec::new();
+    for entry in entries {
+        if let Ok(entry) = entry {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 #[tauri::command]
@@ -89,29 +205,37 @@ fn test_mcp(server_type: &str, command: Option<Vec<String>>, url: Option<String>
 
 #[tauri::command]
 fn check_cli(cli_id: &str) -> bool {
-    let paths = match cli_id {
+    // Risolve i path utente in modo portabile (no hardcoded username).
+    // - home: %USERPROFILE% su Windows, $HOME su Unix
+    // - roaming: %APPDATA% su Windows, $XDG_CONFIG_HOME su Linux
+    // - local:   %LOCALAPPDATA% su Windows, $XDG_DATA_HOME su Linux
+    let Some(p) = UserPaths::resolve() else {
+        return false;
+    };
+
+    let paths: Vec<PathBuf> = match cli_id {
         "claude" => vec![
-            r"C:\Users\mauro\.claude",
-            r"C:\Users\mauro\AppData\Roaming\Claude",
+            p.home.join(".claude"),
+            p.roaming.join("Claude"),
         ],
         "junie" => vec![
-            r"C:\Users\mauro\.junie",
-            r"C:\Users\mauro\AppData\Roaming\Junie",
-            r"C:\Users\mauro\AppData\Local\Junie",
+            p.home.join(".junie"),
+            p.roaming.join("Junie"),
+            p.local.join("Junie"),
         ],
         "cline" => vec![
-            r"C:\Users\mauro\.cline",
+            p.home.join(".cline"),
         ],
         "kilo" => vec![
-            r"C:\Users\mauro\.config\kilo",
+            p.home.join(".config").join("kilo"),
         ],
         "opencode" => vec![
-            r"C:\Users\mauro\.config\opencode",
+            p.home.join(".config").join("opencode"),
         ],
         _ => vec![],
     };
 
-    paths.iter().any(|p| Path::new(p).exists())
+    paths.iter().any(|p| p.exists())
 }
 
 #[tauri::command]
@@ -159,7 +283,7 @@ fn install_cli(cli_id: &str) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp])
+        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp, get_cli_paths, list_dir])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
