@@ -527,6 +527,36 @@ fn pty_kill(
     pty_manager::kill_pty(state.inner(), &session_id)
 }
 
+/// Restituisce la lista degli UUID dei progetti da mostrare nel tray.
+/// Se vuota, significa "mostra tutti".
+#[tauri::command]
+fn get_tray_projects() -> Vec<String> {
+    tray::Settings::load().get_tray_projects().clone()
+}
+
+/// Salva la lista degli UUID dei progetti da mostrare nel tray.
+#[tauri::command]
+fn set_tray_projects(uuids: Vec<String>) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_tray_projects(uuids);
+    settings.save()
+}
+
+/// Restituisce tutti i progetti registrati in template.json.
+#[tauri::command]
+fn get_all_projects() -> Result<Vec<serde_json::Value>, String> {
+    tray::load_projects_from_template()
+}
+
+/// Forza il reload del menu tray (ricostruisce da template.json + settings).
+/// Viene chiamato quando l'utente modifica i checkbox in Settings.
+#[tauri::command]
+fn refresh_tray_menu(app: tauri::AppHandle) -> Result<(), String> {
+    let projects = get_all_projects()?;
+    let tray_projects = get_tray_projects();
+    tray::refresh_tray_menu(&app, &projects, &tray_projects)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -582,7 +612,11 @@ pub fn run() {
             pty_resize,
             pty_kill,
             get_close_to_tray,
-            set_close_to_tray
+            set_close_to_tray,
+            get_tray_projects,
+            set_tray_projects,
+            get_all_projects,
+            refresh_tray_menu
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
