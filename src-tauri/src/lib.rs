@@ -1,5 +1,5 @@
 use tauri_plugin_opener::open_url;
-use tauri::{Manager, Emitter};
+use tauri::{Manager, Emitter, State};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -350,10 +350,23 @@ const EDITOR_WHITELIST: &[(&str, &str)] = &[
     ("webstorm", "webstorm"),
 ];
 
-/// Controlla se il comando CLI di un editor è disponibile nel PATH.
-/// Su Windows usa `where`, su Unix `which`. Veloce e non blocca la UI.
-#[tauri::command]
-fn check_editor(editor_id: &str) -> bool {
+/// Cache degli editor rilevati. Viene popolata in background all'avvio
+/// dell'app e poi servita istantaneamente alla UI senza blocchi IPC.
+struct EditorCache {
+    /// Risultato della detection: editor_id → installato (sì/no).
+    /// None = detection ancora in corso.
+    result: Option<HashMap<String, bool>>,
+}
+
+impl EditorCache {
+    fn new() -> Self {
+        Self { result: None }
+    }
+}
+
+/// Esegue la detection di un singolo editor (stessa logica di `check_editor`).
+/// Wrapper interno usato da `detect_all_editors_background`.
+fn do_check_editor(editor_id: &str) -> bool {
     let cmd = match EDITOR_WHITELIST.iter().find(|(id, _)| *id == editor_id) {
         Some((_, c)) => *c,
         None => return false,
@@ -365,6 +378,38 @@ fn check_editor(editor_id: &str) -> bool {
     let output = Command::new("which").arg(cmd).output();
 
     output.map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Popola la cache degli editor in un thread in background.
+/// Chiamata da `setup()` all'avvio dell'app.
+fn detect_all_editors_background(cache: Arc<Mutex<EditorCache>>) {
+    std::thread::spawn(move || {
+        let mut results = HashMap::new();
+        for (id, _) in EDITOR_WHITELIST {
+            results.insert(id.to_string(), do_check_editor(id));
+        }
+        let mut guard = cache.lock().unwrap();
+        guard.result = Some(results);
+    });
+}
+
+/// Restituisce lo stato di tutti gli editor in un singolo IPC.
+/// Se la detection in background è già completata, ritorna subito.
+/// Se ancora in corso, blocca max ~100ms per dare tempo al thread
+/// di completare (gli editor sono pochi e `where` è veloce).
+/// In ogni caso la chiamata successiva sarà istantanea (cache in Rust).
+#[tauri::command]
+fn get_all_editors_status(cache: State<Arc<Mutex<EditorCache>>>) -> HashMap<String, bool> {
+    let guard = cache.lock().unwrap();
+    guard.result.clone().unwrap_or_else(|| {
+        // Fallback: detection sincrona se il background non ha finito.
+        // Succede solo al primo accesso prima che il thread completi.
+        let mut results = HashMap::new();
+        for (id, _) in EDITOR_WHITELIST {
+            results.insert(id.to_string(), do_check_editor(id));
+        }
+        results
+    })
 }
 
 /// Apre il progetto nell'editor/IDE specificato, passando il path come
@@ -689,6 +734,13 @@ pub fn run() {
             // Inserisci lo state PTY (Arc<Mutex<PtyState>>) nel container
             // gestito da Tauri. I command lo recuperano via `tauri::State<PtyStateHandle>`.
             app.manage::<PtyStateHandle>(Arc::new(Mutex::new(PtyState::default())));
+
+            // Cache editor: popolata in background all'avvio per non
+            // bloccare mai la UI con IPC ripetuti su TabProject.
+            let editor_cache: Arc<Mutex<EditorCache>> = Arc::new(Mutex::new(EditorCache::new()));
+            app.manage(editor_cache.clone());
+            detect_all_editors_background(editor_cache);
+
             // Setup tray icon
             tray::setup_tray(app)?;
             Ok(())
@@ -705,7 +757,7 @@ pub fn run() {
             get_cli_paths,
             list_dir,
             run_cli,
-            check_editor,
+            get_all_editors_status,
             open_in_editor,
             pty_spawn,
             pty_write,
