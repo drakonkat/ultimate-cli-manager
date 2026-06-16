@@ -29,7 +29,7 @@ pub const CLI_LIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
 const SETTINGS_FILE: &str = ".ucm/settings.json";
 
 // ======================================================================
-// Settings (path memory + close_to_tray + tray_projects)
+// Settings (path memory + close_to_tray + tray_projects + spawn_mode)
 // ======================================================================
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -39,10 +39,16 @@ pub struct Settings {
     close_to_tray: bool,
     #[serde(default)]
     tray_projects: Vec<String>,
+    #[serde(default = "default_spawn_mode")]
+    spawn_mode: String,
 }
 
 fn default_close_to_tray() -> bool {
     true
+}
+
+fn default_spawn_mode() -> String {
+    "terminal".to_string()
 }
 
 impl Settings {
@@ -92,6 +98,13 @@ impl Settings {
         self.tray_projects = uuids;
     }
 
+    pub fn get_spawn_mode(&self) -> &str {
+        &self.spawn_mode
+    }
+
+    pub fn set_spawn_mode(&mut self, mode: String) {
+        self.spawn_mode = mode;
+    }
 }
 
 fn settings_path() -> Option<PathBuf> {
@@ -101,6 +114,11 @@ fn settings_path() -> Option<PathBuf> {
 /// Returns the current close_to_tray setting.
 pub fn settings_close_to_tray() -> bool {
     Settings::load().close_to_tray()
+}
+
+/// Returns the current spawn_mode setting.
+pub fn settings_spawn_mode() -> String {
+    Settings::load().get_spawn_mode().to_string()
 }
 
 // ======================================================================
@@ -120,7 +138,6 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     let menu = build_tray_menu(app, &projects, &tray_projects)?;
 
     // ---- Load tray icon ----
-    // Use the default window icon (icon.ico from tauri.conf.json)
     let icon = app
         .default_window_icon()
         .cloned()
@@ -131,7 +148,7 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
         .icon(icon)
         .tooltip("Ultimate CLI Manager")
         .menu(&menu)
-        .show_menu_on_left_click(false) // right-click only for menu; left-click → show window
+        .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
             let id = event.id().as_ref().to_string();
             let id_str: &str = &id;
@@ -164,7 +181,6 @@ pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
             }
         })
         .on_tray_icon_event(|tray, event| {
-            // Left-click on tray icon → show main window
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
@@ -185,22 +201,12 @@ fn build_tray_menu(
     projects: &[serde_json::Value],
     tray_projects: &[String],
 ) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    // "Apri UCM"
     let open_ucm = MenuItem::with_id(app, "open_ucm", "Apri UCM", true, None::<&str>)?;
-
-    // Separator 1
     let sep1 = PredefinedMenuItem::separator(app)?;
-
-    // Sottomenu Projects
     let projects_submenu = build_projects_submenu(app, projects, tray_projects)?;
-
-    // Separator 2
     let sep2 = PredefinedMenuItem::separator(app)?;
-
-    // "Esci"
     let quit = MenuItem::with_id(app, "quit", "Esci", true, None::<&str>)?;
 
-    // Submenu implements IsMenuItem, può essere usato direttamente in Menu::with_items
     let menu = Menu::with_items(
         app,
         &[
@@ -229,7 +235,6 @@ fn build_projects_submenu(
         &[],
     )?;
 
-    // Filtra: se tray_projects è vuoto, mostra tutti; altrimenti solo quelli con UUID in lista
     let visible: Vec<&serde_json::Value> = if tray_projects.is_empty() {
         projects.iter().collect()
     } else {
@@ -259,7 +264,6 @@ fn build_projects_submenu(
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            // Sottomenu per questo progetto
             let proj_submenu = Submenu::with_id_and_items(
                 app,
                 &format!("proj_{}", id),
@@ -281,7 +285,6 @@ fn build_projects_submenu(
 
     Ok(submenu)
 }
-
 
 // ======================================================================
 // Helpers
@@ -326,10 +329,17 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Genera un ID unico basato su timestamp per spawn senza progetto.
+fn generate_unique_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("tray-{}", now.as_nanos())
+}
+
 /// Gestisce il click su un sottocomando "project_<uuid>_spawn_<cli_id>".
-async fn handle_project_spawn(_app: &AppHandle, id: &str) -> Result<(), String> {
-    // Estrai uuid e cli_id dal formato "project_<uuid>_spawn_<cli_id>"
-    // Gli UUID contengono solo lettere, numeri e dash, quindi possiamo splittare su "_spawn_"
+async fn handle_project_spawn(app: &AppHandle, id: &str) -> Result<(), String> {
     let Some(spawn_pos) = id.find("_spawn_") else {
         return Err(format!("Formato id non valido: {}", id));
     };
@@ -337,7 +347,6 @@ async fn handle_project_spawn(_app: &AppHandle, id: &str) -> Result<(), String> 
     let uuid_part = &id["project_".len()..spawn_pos];
     let cli_id = &id[spawn_pos + "_spawn_".len()..];
 
-    // Leggi template.json per trovare il path del progetto
     let projects = load_projects_from_template()?;
     let project = projects
         .iter()
@@ -349,22 +358,34 @@ async fn handle_project_spawn(_app: &AppHandle, id: &str) -> Result<(), String> 
         .and_then(|v| v.as_str())
         .ok_or("Path progetto mancante")?;
 
-    // Spawn PowerShell con cd <path> ; <cli_id>
-    spawn_cli(cli_id, path)
+    let project_name = project
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+
+    let spawn_mode = settings_spawn_mode();
+
+    if spawn_mode == "terminal" {
+        super::do_open_terminal_window(
+            app.clone(),
+            cli_id,
+            path,
+            uuid_part,
+            project_name,
+        )?;
+    } else {
+        spawn_cli(cli_id, path)?;
+    }
+
+    Ok(())
 }
 
-/// Shows a directory picker dialog, then calls `run_cli` if a path is selected.
-/// Runs asynchronously (does not block the tray thread).
+/// Shows a directory picker dialog, then spawns the CLI.
 async fn ask_path_and_spawn(app: &AppHandle, cli_id: &str) -> Result<(), String> {
-    // Load settings for path memory
     let mut settings = Settings::load();
-
-    // Use a channel to get the result from the blocking dialog
     let (tx, rx) = std::sync::mpsc::channel();
-
     let title = format!("Select project folder for {}", capitalize(cli_id));
 
-    // pick_folder takes a callback - we use a channel to get the result
     app.dialog()
         .file()
         .set_title(&title)
@@ -372,29 +393,37 @@ async fn ask_path_and_spawn(app: &AppHandle, cli_id: &str) -> Result<(), String>
             let _ = tx.send(path);
         });
 
-    // Wait for the dialog result
     let picked = rx.recv();
 
     if let Ok(Some(path)) = picked {
         let path_str = path.to_string();
 
-        // Save as last used path
         settings.set_last_path(cli_id, &path_str);
         if let Err(e) = settings.save() {
             eprintln!("[tray] warning: failed to save settings: {}", e);
         }
 
-        // Spawn PowerShell with the CLI directly (same logic as run_cli command)
-        if let Err(e) = spawn_cli(cli_id, &path_str) {
-            eprintln!("[tray] spawn error: {}", e);
+        let spawn_mode = settings_spawn_mode();
+
+        if spawn_mode == "terminal" {
+            let unique_id = generate_unique_id();
+            super::do_open_terminal_window(
+                app.clone(),
+                cli_id,
+                &path_str,
+                &unique_id,
+                "Tray",
+            )?;
+        } else {
+            if let Err(e) = spawn_cli(cli_id, &path_str) {
+                eprintln!("[tray] spawn error: {}", e);
+            }
         }
     }
-    // If user cancelled, do nothing
     Ok(())
 }
 
 /// Spawns a PowerShell window with the given CLI at the specified path.
-/// Same logic as the `run_cli` Tauri command.
 fn spawn_cli(cli_id: &str, project_path: &str) -> Result<(), String> {
     use std::process::Command;
     use std::path::Path;

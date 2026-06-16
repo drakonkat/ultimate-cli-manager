@@ -1,5 +1,5 @@
 use tauri_plugin_opener::open_url;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -483,6 +483,91 @@ fn pty_spawn(
     Ok(session_id)
 }
 
+/// Apre o riutilizza una finestra terminale integrato per un progetto.
+/// Se la finestra `terminal-<projectId>-<cliId>` esiste già:
+///   - Porta a fuoco la finestra
+///   - Emette `terminal:add-tab` per aggiungere una nuova tab
+/// Se non esiste:
+///   - Crea una nuova WebviewWindow con URL `/?cli=<cli>&path=<path>`
+///   - Il frontend instrada automaticamente a TerminalWindow (vedi main.jsx)
+#[tauri::command]
+fn open_terminal_window(
+    app: tauri::AppHandle,
+    cli_id: String,
+    project_path: String,
+    project_id: String,
+    project_name: String,
+) -> Result<(), String> {
+    do_open_terminal_window(app, &cli_id, &project_path, &project_id, &project_name)
+}
+
+/// Implementazione condivisa per aprire la finestra terminale.
+/// Usata sia dal command `open_terminal_window` sia da tray.rs.
+pub fn do_open_terminal_window(
+    app: tauri::AppHandle,
+    cli_id: &str,
+    project_path: &str,
+    project_id: &str,
+    project_name: &str,
+) -> Result<(), String> {
+    use tauri::WebviewWindowBuilder;
+    use tauri::WebviewUrl;
+
+    let window_label = format!("terminal-{}-{}", project_id, cli_id);
+
+    // Prova a trovare una finestra esistente con questo label
+    if let Some(existing) = app.get_webview_window(&window_label) {
+        // Riporta a fuoco e aggiungi una nuova tab
+        let _ = existing.set_focus();
+        let _ = existing.emit(
+            "terminal:add-tab",
+            serde_json::json!({
+                "cliId": cli_id,
+                "projectPath": project_path
+            }),
+        );
+        return Ok(());
+    }
+
+    // CLI lookup per icona/titolo
+    let cli_obj = CLI_METADATA
+        .iter()
+        .find(|m| m.id == cli_id);
+    let title = format!(
+        "{} {} — {} [beta]",
+        cli_obj.map(|m| m.icon).unwrap_or('?'),
+        cli_obj.map(|m| m.name).unwrap_or(&cli_id),
+        project_name
+    );
+
+    // Crea nuova finestra — il browser gestisce encoding dei query params
+    let url = format!("/?cli={}&path={}", cli_id, project_path);
+
+    WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
+        .title(&title)
+        .inner_size(1100.0, 700.0)
+        .min_inner_size(600.0, 400.0)
+        .build()
+        .map_err(|e| format!("Impossibile aprire finestra terminale: {}", e))?;
+
+    Ok(())
+}
+
+/// Metadata delle CLI (id, icon, name). Usato da `open_terminal_window`.
+struct CliMeta {
+    id: &'static str,
+    icon: char,
+    name: &'static str,
+}
+
+const CLI_METADATA: &[CliMeta] = &[
+    CliMeta { id: "claude", icon: '🤖', name: "Claude" },
+    CliMeta { id: "junie", icon: '🧠', name: "Junie" },
+    CliMeta { id: "cline", icon: '⚡', name: "Cline" },
+    CliMeta { id: "kilo", icon: '⚡', name: "Kilo" },
+    CliMeta { id: "opencode", icon: '🚀', name: "OpenCode" },
+];
+
 /// Scrive `data` (input utente) nel PTY della sessione.
 #[tauri::command]
 fn pty_write(
@@ -504,6 +589,20 @@ fn get_close_to_tray() -> bool {
 fn set_close_to_tray(value: bool) -> Result<(), String> {
     let mut settings = tray::Settings::load();
     settings.set_close_to_tray(value);
+    settings.save()
+}
+
+/// Legge il setting spawn_mode.
+#[tauri::command]
+fn get_spawn_mode() -> String {
+    tray::settings_spawn_mode()
+}
+
+/// Scrive il setting spawn_mode.
+#[tauri::command]
+fn set_spawn_mode(mode: String) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_spawn_mode(mode);
     settings.save()
 }
 
@@ -612,8 +711,11 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_kill,
+            open_terminal_window,
             get_close_to_tray,
             set_close_to_tray,
+            get_spawn_mode,
+            set_spawn_mode,
             get_tray_projects,
             set_tray_projects,
             get_all_projects,
