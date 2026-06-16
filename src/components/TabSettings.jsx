@@ -5,12 +5,11 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
   const [projects, setProjects] = useState([]);
   const [trayProjects, setTrayProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      invoke('get_all_projects'),
-      invoke('get_tray_projects'),
-    ])
+    Promise.all([invoke('get_all_projects'), invoke('get_tray_projects')])
       .then(([allProjects, selectedUuids]) => {
         setProjects(allProjects || []);
         setTrayProjects(selectedUuids || []);
@@ -22,20 +21,30 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
       });
   }, []);
 
-  const handleToggle = async (projectId) => {
-    const isSelected = trayProjects.includes(projectId);
-    let newTrayProjects;
-    if (isSelected) {
-      newTrayProjects = trayProjects.filter((id) => id !== projectId);
-    } else {
-      newTrayProjects = [...trayProjects, projectId];
-    }
-    setTrayProjects(newTrayProjects);
+  const handleToggle = (projectId) => {
+    setTrayProjects((prev) => {
+      const isSelected = prev.includes(projectId);
+      let next;
+      if (isSelected) {
+        next = prev.filter((id) => id !== projectId);
+      } else {
+        next = [...prev, projectId];
+      }
+      setDirty(true);
+      return next;
+    });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      await invoke('set_tray_projects', { uuids: newTrayProjects });
+      await invoke('set_tray_projects', { uuids: trayProjects });
       await invoke('refresh_tray_menu');
+      setDirty(false);
     } catch (e) {
-      console.error('Failed to update tray projects:', e);
+      console.error('Failed to save tray projects:', e);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -83,8 +92,7 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
             {projects.map((p) => {
               const id = p.id || p._id || '';
               const name = p.name || 'Unnamed';
-              // If trayProjects is empty, all projects are shown (default behavior)
-              const isChecked = trayProjects.length === 0 || trayProjects.includes(id);
+              const isChecked = trayProjects.includes(id);
               return (
                 <label key={id} className="settings-checkbox">
                   <input
@@ -96,6 +104,16 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
                 </label>
               );
             })}
+          </div>
+        )}
+        {dirty && (
+          <div style={{ marginTop: '1rem' }}>
+            <button onClick={handleSave} disabled={saving}>
+              {saving ? 'Salvataggio…' : '💾 Salva e riavvia tray'}
+            </button>
+            <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.85em' }}>
+              Le modifiche verranno applicate al riavvio del tray
+            </span>
           </div>
         )}
       </div>
