@@ -350,7 +350,7 @@ fn show_main_window(app: &AppHandle) {
 }
 
 /// Gestisce il click su un sottocomando "project_<uuid>_spawn_<cli_id>".
-async fn handle_project_spawn(app: &AppHandle, id: &str) -> Result<(), String> {
+async fn handle_project_spawn(_app: &AppHandle, id: &str) -> Result<(), String> {
     // Estrai uuid e cli_id dal formato "project_<uuid>_spawn_<cli_id>"
     // Gli UUID contengono solo lettere, numeri e dash, quindi possiamo splittare su "_spawn_"
     let Some(spawn_pos) = id.find("_spawn_") else {
