@@ -548,13 +548,14 @@ fn get_all_projects() -> Result<Vec<serde_json::Value>, String> {
     tray::load_projects_from_template()
 }
 
-/// Forza il reload del menu tray (ricostruisce da template.json + settings).
+/// Forza il reload del menu tray riavviando l'applicazione.
 /// Viene chiamato quando l'utente modifica i checkbox in Settings.
 #[tauri::command]
 fn refresh_tray_menu(app: tauri::AppHandle) -> Result<(), String> {
-    let projects = get_all_projects()?;
-    let tray_projects = get_tray_projects();
-    tray::refresh_tray_menu(&app, &projects, &tray_projects)
+    let _projects = get_all_projects()?;
+    let _tray_projects = get_tray_projects();
+    // Riavvia l'app per ricostruire il menu tray
+    app.restart();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

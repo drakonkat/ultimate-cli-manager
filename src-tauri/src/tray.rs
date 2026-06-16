@@ -282,20 +282,6 @@ fn build_projects_submenu(
     Ok(submenu)
 }
 
-/// Refresh del menu tray con i progetti aggiornati.
-/// Viene chiamato quando l'utente modifica i checkbox in Settings.
-pub fn refresh_tray_menu(
-    _app: &tauri::AppHandle,
-    _projects: &[serde_json::Value],
-    _tray_projects: &[String],
-) -> Result<(), String> {
-    // In Tauri 2, ricostruire il menu a runtime richiede di ricreare la tray icon
-    // Per semplicità: questa funzione indica che serve riavvio
-    // Il refresh completo richiederebbe di salvare lo state della tray icon
-    // e ricrearla — feature che possiamo aggiungere in futuro
-    eprintln!("[tray] refresh_tray_menu called — menu will be updated on next app restart");
-    Ok(())
-}
 
 // ======================================================================
 // Helpers
