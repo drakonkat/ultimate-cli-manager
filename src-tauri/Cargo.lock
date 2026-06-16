@@ -4198,7 +4198,7 @@ dependencies = [
 
 [[package]]
 name = "ultimate-cli-manager"
-version = "0.1.2"
+version = "0.2.1"
 dependencies = [
  "dirs 5.0.1",
  "portable-pty",

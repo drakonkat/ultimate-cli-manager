@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod pty_manager;
+mod tray;
 use pty_manager::{PtyState, PtyStateHandle};
 
 // ======================================================================
@@ -530,6 +531,9 @@ pub fn run() {
                     let app_handle = window.app_handle();
                     let state = app_handle.state::<PtyStateHandle>();
                     pty_manager::kill_all_for_window(state.inner(), window.label());
+                } else if window.label() == "main" {
+                    // Minimizza in tray invece di chiudere
+                    let _ = window.hide();
                 }
             }
         })
@@ -537,6 +541,8 @@ pub fn run() {
             // Inserisci lo state PTY (Arc<Mutex<PtyState>>) nel container
             // gestito da Tauri. I command lo recuperano via `tauri::State<PtyStateHandle>`.
             app.manage::<PtyStateHandle>(Arc::new(Mutex::new(PtyState::default())));
+            // Setup tray icon
+            tray::setup_tray(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
