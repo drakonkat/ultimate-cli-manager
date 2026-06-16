@@ -29,16 +29,22 @@ pub const CLI_LIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
 const SETTINGS_FILE: &str = ".ucm/settings.json";
 
 // ======================================================================
-// Settings (path memory)
+// Settings (path memory + close_to_tray)
 // ======================================================================
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
-struct Settings {
+pub struct Settings {
     last_spawn_paths: HashMap<String, String>,
+    #[serde(default = "default_close_to_tray")]
+    close_to_tray: bool,
+}
+
+fn default_close_to_tray() -> bool {
+    true
 }
 
 impl Settings {
-    fn load() -> Self {
+    pub fn load() -> Self {
         let Some(path) = settings_path() else {
             return Self::default();
         };
@@ -52,7 +58,7 @@ impl Settings {
         }
     }
 
-    fn save(&self) -> Result<(), String> {
+    pub fn save(&self) -> Result<(), String> {
         let Some(path) = settings_path() else {
             return Err("Impossibile determinare il path delle settings".into());
         };
@@ -64,13 +70,26 @@ impl Settings {
         Ok(())
     }
 
-    fn set_last_path(&mut self, cli_id: &str, path: &str) {
+    pub fn set_last_path(&mut self, cli_id: &str, path: &str) {
         self.last_spawn_paths.insert(cli_id.to_string(), path.to_string());
+    }
+
+    pub fn close_to_tray(&self) -> bool {
+        self.close_to_tray
+    }
+
+    pub fn set_close_to_tray(&mut self, value: bool) {
+        self.close_to_tray = value;
     }
 }
 
 fn settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(SETTINGS_FILE))
+}
+
+/// Returns the current close_to_tray setting.
+pub fn settings_close_to_tray() -> bool {
+    Settings::load().close_to_tray()
 }
 
 // ======================================================================

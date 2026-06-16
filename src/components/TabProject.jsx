@@ -8,8 +8,8 @@ import { EDITOR_LIST, detectAllEditors } from '../utils/editorDetector';
 
 /**
  * Tab "Project" — permette di registrare cartelle di progetto e di
- * lanciare, per ciascuna, la CLI selezionata e installata in una
- * nuova finestra PowerShell persistente.
+ * lanciare, per ciascuna, una CLI installata in una nuova finestra
+ * PowerShell persistente.
  *
  * Persistenza: campo `projects: []` in `~/.ucm/template.json`
  * (vedi `templateManager.upsertProject` / `removeProject`).
@@ -18,7 +18,7 @@ import { EDITOR_LIST, detectAllEditors } from '../utils/editorDetector';
  * `src-tauri/src/lib.rs`), che apre PowerShell con
  * `-NoExit -Command "cd '<path>'; <cli>"`.
  */
-function TabProject({ selectedCLIs }) {
+function TabProject() {
   const [template, setTemplate] = useState(null);
   const [formName, setFormName] = useState('');
   const [formPath, setFormPath] = useState('');
@@ -43,9 +43,9 @@ function TabProject({ selectedCLIs }) {
   // Mappa id CLI → CLI object (per icona e label).
   const cliById = Object.fromEntries(CLI_LIST.map((c) => [c.id, c]));
 
-  // CLI effettivamente "avviabili" = selezionate in sidebar AND installate.
-  const availableCLIs = (selectedCLIs || []).filter(
-    (id) => installedCLIs[id] === true
+  // CLI effettivamente "avviabili" = tutte quelle installate (nessun filtro sidebar)
+  const availableCLIs = CLI_LIST.filter(
+    (cli) => installedCLIs[cli.id] === true
   );
 
   // Mappa id editor → editor object (per icona e label).
@@ -182,7 +182,7 @@ function TabProject({ selectedCLIs }) {
   return (
     <div className="tab-panel">
       <h3>📁 Projects</h3>
-      <p>Register a project folder, then launch the selected CLI directly inside it.</p>
+      <p>Register a project folder, then launch any installed CLI directly inside it.</p>
 
       {/* Form "Add project" */}
       <form
@@ -285,8 +285,7 @@ function TabProject({ selectedCLIs }) {
               {availableCLIs.length === 0 ? (
                 <p style={{ marginTop: '0.5rem', opacity: 0.6 }}>
                   <em>
-                    No installed + selected CLI. Pick at least one CLI in the
-                    sidebar and install it.
+                    No installed CLI detected. Install one from the Docs tab.
                   </em>
                 </p>
               ) : (
@@ -298,19 +297,16 @@ function TabProject({ selectedCLIs }) {
                     marginTop: '0.5rem',
                   }}
                 >
-                  {availableCLIs.map((id) => {
-                    const cli = cliById[id];
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => handlePlay(id, p.path)}
-                        title={`Open PowerShell in ${p.path} and run ${id}`}
-                      >
-                        ▶ {cli?.icon} {cli?.name || id}
-                      </button>
-                    );
-                  })}
+                  {availableCLIs.map((cli) => (
+                    <button
+                      key={cli.id}
+                      type="button"
+                      onClick={() => handlePlay(cli.id, p.path)}
+                      title={`Open PowerShell in ${p.path} and run ${cli.id}`}
+                    >
+                      ▶ {cli.icon} {cli.name || cli.id}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -381,19 +377,16 @@ function TabProject({ selectedCLIs }) {
                       gap: '0.4rem',
                     }}
                   >
-                    {availableCLIs.map((id) => {
-                      const cli = cliById[id];
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => openInIntegratedTerminal(id, p.path, p.id, p.name)}
-                          title={`Open a new Tauri window (or focus the existing one) with a PTY running ${id} in ${p.path}`}
-                        >
-                          🪟 {cli?.icon} {cli?.name || id}
-                        </button>
-                      );
-                    })}
+                    {availableCLIs.map((cli) => (
+                      <button
+                        key={cli.id}
+                        type="button"
+                        onClick={() => openInIntegratedTerminal(cli.id, p.path, p.id, p.name)}
+                        title={`Open a new Tauri window (or focus the existing one) with a PTY running ${cli.id} in ${p.path}`}
+                      >
+                        🪟 {cli.icon} {cli.name || cli.id}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}

@@ -493,6 +493,20 @@ fn pty_write(
     pty_manager::write_pty(state.inner(), &session_id, &data)
 }
 
+/// Legge il setting close_to_tray.
+#[tauri::command]
+fn get_close_to_tray() -> bool {
+    tray::settings_close_to_tray()
+}
+
+/// Scrive il setting close_to_tray.
+#[tauri::command]
+fn set_close_to_tray(value: bool) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_close_to_tray(value);
+    settings.save()
+}
+
 /// Ridimensiona il PTY (chiamato da ResizeObserver su xterm container).
 #[tauri::command]
 fn pty_resize(
@@ -532,8 +546,12 @@ pub fn run() {
                     let state = app_handle.state::<PtyStateHandle>();
                     pty_manager::kill_all_for_window(state.inner(), window.label());
                 } else if window.label() == "main" {
-                    // Minimizza in tray invece di chiudere
-                    let _ = window.hide();
+                    // Leggi il setting close_to_tray e decidi cosa fare
+                    if tray::settings_close_to_tray() {
+                        let _ = window.hide();
+                    } else {
+                        let _ = window.close();
+                    }
                 }
             }
         })
@@ -562,7 +580,9 @@ pub fn run() {
             pty_spawn,
             pty_write,
             pty_resize,
-            pty_kill
+            pty_kill,
+            get_close_to_tray,
+            set_close_to_tray
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

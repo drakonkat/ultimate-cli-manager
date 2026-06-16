@@ -22,7 +22,14 @@ Example:
 - Always use TypeScript strict mode
 `;
 
-function TabCharacter({ selectedCLIs }) {
+// Tutte le CLI che supportano character
+function getAllCharacterCLIs() {
+  return Object.entries(CHARACTER_PATHS)
+    .filter(([_, path]) => path != null)
+    .map(([id, _]) => id);
+}
+
+function TabCharacter() {
   const [template, setTemplate] = useState(null);
   const [instructions, setInstructions] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -45,8 +52,9 @@ function TabCharacter({ selectedCLIs }) {
   };
 
   const handlePropagate = async () => {
-    if (selectedCLIs.length === 0) {
-      alert('Select at least one CLI in the sidebar');
+    const allCharCLIs = getAllCharacterCLIs();
+    if (allCharCLIs.length === 0) {
+      alert('No CLI supports character');
       return;
     }
     if (dirty) {
@@ -57,14 +65,14 @@ function TabCharacter({ selectedCLIs }) {
     setPropagating(true);
     setPropagationResults(null);
 
-    const conflicts = await detectCharacterConflicts(selectedCLIs);
+    const conflicts = await detectCharacterConflicts(allCharCLIs);
     if (conflicts.length > 0) {
       setConflictDialog({ conflicts });
       setPropagating(false);
       return;
     }
 
-    const results = await propagateCharacterToCLIs(selectedCLIs, instructions, {});
+    const results = await propagateCharacterToCLIs(allCharCLIs, instructions, {});
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -72,7 +80,8 @@ function TabCharacter({ selectedCLIs }) {
   const handleConflictResolve = async (resolutions) => {
     setConflictDialog(null);
     setPropagating(true);
-    const results = await propagateCharacterToCLIs(selectedCLIs, instructions, resolutions);
+    const allCharCLIs = getAllCharacterCLIs();
+    const results = await propagateCharacterToCLIs(allCharCLIs, instructions, resolutions);
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -80,13 +89,13 @@ function TabCharacter({ selectedCLIs }) {
   if (!template) return <div className="tab-panel"><p>Loading template...</p></div>;
 
   const charLen = instructions.length;
-  const targetCLIs = selectedCLIs.filter(supportsCharacter);
+  const allCharCLIs = getAllCharacterCLIs();
 
   return (
     <div className="tab-panel">
       <h3>💬 Character / Instructions</h3>
       <p>
-        Global instructions (character) will be applied to the {targetCLIs.length || 0} selected CLIs that support them.
+        Global instructions (character) will be applied to {allCharCLIs.length} CLIs that support them.
       </p>
 
       <div className="char-form">
@@ -119,9 +128,9 @@ function TabCharacter({ selectedCLIs }) {
             type="button"
             className="btn-propagate"
             onClick={handlePropagate}
-            disabled={propagating || selectedCLIs.length === 0}
+            disabled={propagating}
           >
-            {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${selectedCLIs.length} CLI(s)`}
+            {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${allCharCLIs.length} CLI(s)`}
           </button>
         </div>
       </div>

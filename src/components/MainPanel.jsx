@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import TabPanoramica from './TabPanoramica';
 import TabMCP from './TabMCP';
 import TabAgents from './TabAgents';
@@ -6,57 +5,47 @@ import TabSkills from './TabSkills';
 import TabCharacter from './TabCharacter';
 import TabDocs from './TabDocs';
 import TabProject from './TabProject';
+import TabSettings from './TabSettings';
 
-const TABS = [
-  { id: 'panoramica', label: 'Overview', icon: '📊' },
-  { id: 'mcp', label: 'MCP', icon: '🔌' },
-  { id: 'agents', label: 'Agents', icon: '🤖' },
-  { id: 'skills', label: 'Skills', icon: '🛠️' },
-  { id: 'character', label: 'Character', icon: '💬' },
-  { id: 'docs', label: 'Docs (install)', icon: '📚' },
-  { id: 'project', label: 'Project', icon: '📁' },
-];
+function MainPanel({ activeSection, closeToTray, onCloseToTrayChange }) {
+  let Content;
+  switch (activeSection) {
+    case 'panoramica':
+      Content = TabPanoramica;
+      break;
+    case 'mcp':
+      Content = TabMCP;
+      break;
+    case 'agents':
+      Content = TabAgents;
+      break;
+    case 'skills':
+      Content = TabSkills;
+      break;
+    case 'character':
+      Content = TabCharacter;
+      break;
+    case 'docs':
+      Content = TabDocs;
+      break;
+    case 'project':
+      Content = TabProject;
+      break;
+    case 'settings':
+      Content = TabSettings;
+      break;
+    default:
+      Content = TabPanoramica;
+  }
 
-function MainPanel({ selectedCLIs }) {
-  const [activeTab, setActiveTab] = useState('panoramica');
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'panoramica':
-        return <TabPanoramica selectedCLIs={selectedCLIs} />;
-      case 'mcp':
-        return <TabMCP selectedCLIs={selectedCLIs} />;
-      case 'agents':
-        return <TabAgents selectedCLIs={selectedCLIs} />;
-      case 'skills':
-        return <TabSkills selectedCLIs={selectedCLIs} />;
-      case 'character':
-        return <TabCharacter selectedCLIs={selectedCLIs} />;
-      case 'docs':
-        return <TabDocs selectedCLIs={selectedCLIs} />;
-      case 'project':
-        return <TabProject selectedCLIs={selectedCLIs} />;
-      default:
-        return <TabPanoramica selectedCLIs={selectedCLIs} />;
-    }
-  };
+  const props = activeSection === 'settings' ? { closeToTray, onCloseToTrayChange } : {};
 
   return (
     <main className="main-panel">
-      <nav className="tab-nav">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span className="tab-icon">{tab.icon}</span>
-            <span className="tab-label">{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-      <div className="tab-content">
-        {renderTabContent()}
+      <div className="main-content">
+        <div className="main-content-inner">
+          <Content {...props} />
+        </div>
       </div>
     </main>
   );
