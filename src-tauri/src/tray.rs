@@ -92,15 +92,6 @@ impl Settings {
         self.tray_projects = uuids;
     }
 
-    pub fn toggle_tray_project(&mut self, uuid: &str, enabled: bool) {
-        if enabled {
-            if !self.tray_projects.contains(&uuid.to_string()) {
-                self.tray_projects.push(uuid.to_string());
-            }
-        } else {
-            self.tray_projects.retain(|u| u != uuid);
-        }
-    }
 }
 
 fn settings_path() -> Option<PathBuf> {
