@@ -33,7 +33,7 @@ export async function loadTemplate() {
 }
 
 /**
- * Salva il template su disco.
+ * Saves the template to disk.
  */
 export async function saveTemplate(template) {
   await invoke('ensure_dir', { path: TEMPLATE_DIR() });
@@ -124,8 +124,8 @@ export async function setCharacter(template, instructions) {
 }
 
 /**
- * Aggiunge o aggiorna un progetto nella tabella projects del template.
- * Match per id. Se esiste già, preserva `addedAt` originale.
+ * Adds or updates a project in the template's projects table.
+ * Matches by id. If already exists, preserves original `addedAt`.
  *
  * @param {object} template
  * @param {{id: string, name: string, path: string, addedAt?: string}} project
@@ -133,7 +133,7 @@ export async function setCharacter(template, instructions) {
  */
 export async function upsertProject(template, project) {
   if (!project || !project.id) {
-    throw new Error('upsertProject: project.id obbligatorio');
+    throw new Error('upsertProject: project.id is required');
   }
   const existing = (template.projects || []).find((p) => p.id === project.id);
   const merged = {

@@ -49,10 +49,8 @@ function TabProject() {
   );
 
   // Mappa id editor → editor object (per icona e label).
-  const editorById = Object.fromEntries(EDITOR_LIST.map((e) => [e.id, e]));
-
-  // Editor "apribili" = installati sulla macchina (non c'è sidebar
-  // per gli editor, quindi basta il filtro di detection).
+  // "Openable" editors = installed on the machine (no sidebar
+  // for editors, so the detection filter is enough).
   const availableEditors = EDITOR_LIST.filter(
     (e) => installedEditors[e.id] === true
   );
@@ -95,17 +93,17 @@ function TabProject() {
       setFormName('');
       setFormPath('');
     } catch (e) {
-      alert(`Errore salvataggio progetto: ${e}`);
+      alert(`Error saving project: ${e}`);
     }
   };
 
   const handleRemove = async (projectId) => {
-    if (!window.confirm('Rimuovere questo progetto?')) return;
+    if (!window.confirm('Remove this project?')) return;
     try {
       const updated = await removeProject(template, projectId);
       setTemplate(updated);
     } catch (e) {
-      alert(`Errore rimozione progetto: ${e}`);
+      alert(`Error removing project: ${e}`);
     }
   };
 
@@ -142,8 +140,8 @@ function TabProject() {
       const existing = await WebviewWindow.getByLabel(windowLabel);
       if (existing) {
         await existing.setFocus();
-        // Notifica la finestra già aperta di aggiungere una nuova tab.
-        // `TerminalWindow` ascolta questo evento al mount.
+        // Notify the already-open window to add a new tab.
+        // `TerminalWindow` listens to this event at mount.
         await existing.emit('terminal:add-tab', {
           cliId,
           projectPath,

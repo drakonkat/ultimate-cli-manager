@@ -82,7 +82,7 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
               checked={closeToTray}
               onChange={(e) => onCloseToTrayChange(e.target.checked)}
             />
-            <span>Chiudi in tray invece di uscire</span>
+            <span>Close in the tray insted of exiting</span>
           </label>
           <p className="settings-description">
             When enabled, closing the main window hides the app to the system tray instead of exiting.
@@ -158,10 +158,10 @@ function TabSettings({ closeToTray, onCloseToTrayChange }) {
       {dirty && (
         <div style={{ marginTop: '1rem' }}>
           <button onClick={handleSave} disabled={saving}>
-            {saving ? 'Salvataggio…' : '💾 Salva e riavvia tray'}
+            {saving ? 'Saving…' : '💾 Save and restart tray'}
           </button>
           <span style={{ marginLeft: '0.5rem', opacity: 0.7, fontSize: '0.85em' }}>
-            Le modifiche verranno applicate al riavvio del tray
+            Changes will be applied when the tray restarts
           </span>
         </div>
       )}

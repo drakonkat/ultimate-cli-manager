@@ -8,23 +8,23 @@ const CLI_CACHE_TTL_MS = 30_000; // 30 secondi
 let _cliCache = { result: null, timestamp: 0 };
 
 /**
- * Rileva se una CLI è installata controllando i path standard Windows.
- * @param {string} cliId - ID della CLI (claude, junie, cline, kilo, opencode)
- * @returns {Promise<boolean>} true se installata
+ * Detects if a CLI is installed by checking standard Windows paths.
+ * @param {string} cliId - CLI ID (claude, junie, cline, kilo, opencode)
+ * @returns {Promise<boolean>} true if installed
  */
 export async function detectCLI(cliId) {
   try {
     return await invoke('check_cli', { cliId });
   } catch (e) {
-    console.error(`Errore rilevamento ${cliId}:`, e);
+    console.error(`Error detecting ${cliId}:`, e);
     return false;
   }
 }
 
 /**
- * Rileva tutte le CLI supportate in parallelo.
- * Risultati cached per CACHE_TTL_MS per evitare ri-detections
- * innecesarie su tab switch (la UI non si blocca più).
+ * Detects all supported CLIs in parallel.
+ * Results cached for CACHE_TTL_MS to avoid re-detections on tab
+ * switch (UI no longer blocks).
  * @returns {Promise<{claude: boolean, junie: boolean, cline: boolean, kilo: boolean, opencode: boolean}>}
  */
 export async function detectAllCLIs() {

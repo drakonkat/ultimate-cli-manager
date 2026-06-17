@@ -13,10 +13,10 @@ import TerminalTabBar from './TerminalTabBar';
 import '@xterm/xterm/css/xterm.css';
 
 /**
- * Root della finestra Tauri "terminal" (aperta da TabProject via
- * `WebviewWindow`). Mostra un tab bar + un'area xterm.js per ogni
- * tab attiva. Ogni tab è un PTY indipendente lato Rust
- * (vedi `src-tauri/src/pty_manager.rs`).
+ * Root of the Tauri "terminal" window (opened from TabProject via
+ * `WebviewWindow`). Shows a tab bar + an xterm.js area for each
+ * active tab. Each tab is an independent PTY on the Rust side
+ * (see `src-tauri/src/pty_manager.rs`).
  *
  * Ciclo di vita di una tab:
  *   1. `addTab(cliId, path)` → genera sessionId, crea Terminal, chiama
@@ -28,29 +28,29 @@ import '@xterm/xterm/css/xterm.css';
  *
  * Status della tab (drives .status-dot CSS):
  *   - 'starting' → appena creata, prima del primo evento
- *   - 'running'  → PTY vivo, in lettura
+ *   - 'running'  → PTY alive, reading
  *   - 'idle'     → child uscito (pty:exit ricevuto)
- *   - 'error'    → errore di spawn o pty:error ricevuto
+ *   - 'error'    → spawn error or pty:error received
  */
 function TerminalWindow() {
-  // Array di tab: ogni elemento è una "riga" della tab bar.
-  // Gli handle "caldi" (Terminal, FitAddon, unsubscribe) stanno in ref.
+  // Tab array: each element is a "row" of the tab bar.
+  // "Hot" handles (Terminal, FitAddon, unsubscribe) live in refs.
   const [tabs, setTabs] = useState([]);
   const [activeId, setActiveId] = useState(null);
 
   // Refs: sessionId → { term, fit, unsub, resizeObserver, containerEl }
   const termsRef = useRef(new Map());
 
-  // All mount: leggi URL params (apertura diretta da TabProject con
-  // `?cli=...&path=...`) e ascolta l'evento `terminal:add-tab` per
-  // quando l'utente clicca "Open in [cli]" mentre la finestra è già
-  // aperta (in quel caso la main window fa setFocus + emit).
+  // On mount: read URL params (direct open from TabProject with
+  // `?cli=...&path=...`) and listen for `terminal:add-tab` event for
+  // when the user clicks "Open in [cli]" while the window is already
+  // open (in that case the main window does setFocus + emit).
   //
-  // `initializedRef` serve perché `React.StrictMode` in dev mode monta
-  // i componenti due volte: senza il guard, `addTab` verrebbe chiamato
-  // due volte con gli stessi URL params e l'utente vedrebbe 2 tab
-  // identiche all'apertura. Il primo mount setta il ref a `true`, il
-  // secondo mount skippa tutto (URL già parsato, listener già attivo).
+  // `initializedRef` is needed because `React.StrictMode` in dev mode
+  // mounts components twice: without the guard, `addTab` would be called
+  // twice with the same URL params and the user would see 2 identical
+  // tabs on open. The first mount sets the ref to `true`, the second
+  // mount skips everything (URL already parsed, listener already active).
   const initializedRef = useRef(false);
   useEffect(() => {
     if (initializedRef.current) return;
@@ -63,9 +63,9 @@ function TerminalWindow() {
       addTab(cli, path);
     }
 
-    // Cleanup: quando la finestra si chiude (via X / Alt+F4), killa
-    // tutte le sessioni. Il backend lo fa già in `on_window_event`,
-    // ma è bene anche chiudere lato frontend per rilasciare xterm.
+    // Cleanup: when the window closes (via X / Alt+F4), kill
+    // all sessions. The backend already does this in `on_window_event`,
+    // but it's good to also close on the frontend side to release xterm.
     const cleanup = listen('terminal:add-tab', (e) => {
       const { cliId, projectPath } = e.payload;
       if (cliId && projectPath) addTab(cliId, projectPath);
@@ -143,8 +143,8 @@ function TerminalWindow() {
     ]);
     setActiveId(sessionId);
 
-    // Salva nel ref subito (prima del await) così il useEffect
-    // successivo trova l'entry quando il container DOM è pronto.
+    // Save to ref immediately (before await) so the subsequent useEffect
+    // finds the entry when the DOM container is ready.
     const entry = { term, fit, unsub: null, resizeObserver: null, containerEl: null };
     termsRef.current.set(sessionId, entry);
 
@@ -158,8 +158,8 @@ function TerminalWindow() {
         windowLabel: 'terminal',
         sessionId,
       });
-      // Settato 'running' SOLO se non è arrivato un exit nel frattempo
-      // (in caso di errore immediato come "CLI non installata").
+      // Set to 'running' ONLY if no exit arrived in the meantime
+      // (in case of immediate error like "CLI not installed").
       setTabs((prev) =>
         prev.map((t) =>
           t.sessionId === sessionId && t.status === 'starting'
@@ -168,7 +168,7 @@ function TerminalWindow() {
         )
       );
     } catch (e) {
-      // Errore di spawn (es. path non esiste, CLI non installata).
+      // Spawn error (e.g. path doesn't exist, CLI not installed).
       term.write(`\r\n\x1b[31m[Failed to start PTY: ${e}]\x1b[0m\r\n`);
       setTabs((prev) =>
         prev.map((t) =>
@@ -179,7 +179,7 @@ function TerminalWindow() {
     }
 
     // Subscribe agli eventi PTY per questa sessione.
-    const unsub = await subscribePty(sessionId, (ev) => {
+    entry.unsub = await subscribePty(sessionId, (ev) => {
       if (ev.kind === 'data') {
         term.write(ev.data);
       } else if (ev.kind === 'exit') {
@@ -202,7 +202,6 @@ function TerminalWindow() {
         );
       }
     });
-    entry.unsub = unsub;
 
     // Hookup input utente: xterm onData → pty_write.
     term.onData((data) => {
@@ -236,8 +235,8 @@ function TerminalWindow() {
       }
       termsRef.current.delete(sessionId);
     }
-    // Killa lato Rust (idempotente, ritorna Ok anche se la sessione
-    // è già stata rimossa).
+    // Kill on Rust side (idempotent, returns Ok even if the session
+    // was already removed).
     try {
       await ptyKill(sessionId);
     } catch {
@@ -245,13 +244,12 @@ function TerminalWindow() {
     }
     // Rimuovi dallo state. Se era la tab attiva, attiva un'altra.
     setTabs((prev) => {
-      const next = prev.filter((t) => t.sessionId !== sessionId);
-      return next;
+      return prev.filter((t) => t.sessionId !== sessionId);
     });
     setActiveId((curr) => {
       if (curr !== sessionId) return curr;
-      // Attiva la successiva o la precedente tra quelle rimaste.
-      return null; // verrà risolto dal useEffect sotto
+      // Activate the next or previous among those remaining.
+      return null; // will be resolved by the useEffect below
     });
   }, []);
 
@@ -263,12 +261,11 @@ function TerminalWindow() {
   }, [activeId, tabs]);
 
   /**
-   * Aggiunge una nuova tab clonando la CLI e il path della tab
-   * attiva. Niente prompt: la finestra "terminal" è scoped a un
-   * progetto, e l'utente vuole solo un'altra sessione della stessa
-   * CLI nello stesso path. Se non c'è una tab attiva (caso limite:
-   * finestra appena aperta senza aver parsato gli URL params), non
-   * fa nulla.
+   * Adds a new tab by cloning the active tab's CLI and path. No prompt:
+   * the "terminal" window is scoped to a project, and the user just
+   * wants another session of the same CLI in the same path. If there's
+   * no active tab (edge case: window just opened without parsing URL
+   * params), does nothing.
    */
   const handleAdd = useCallback(() => {
     if (!activeId) return;
@@ -309,12 +306,12 @@ function TerminalWindow() {
 }
 
 /**
- * Singolo container xterm per tab. Si occupa di:
- *   1. Attaccare xterm al div (in un useEffect, perché il ref arriva
- *      dopo il primo render).
- *   2. Chiamare `fit.fit()` e inviare le dimensioni al backend.
- *   3. ResizeObserver per fit+resize automatici.
- *   4. `display:none` quando non è la tab attiva (mantiene il buffer).
+ * Single xterm container per tab. Handles:
+ *   1. Attach xterm to div (in a useEffect, because ref arrives
+ *      after the first render).
+ *   2. Call `fit.fit()` and send dimensions to the backend.
+ *   3. ResizeObserver for automatic fit+resize.
+ *   4. `display:none` when not the active tab (preserves buffer).
  */
 function TerminalContainer({ sessionId, isActive, termsRef }) {
   const containerRef = useRef(null);
@@ -325,7 +322,7 @@ function TerminalContainer({ sessionId, isActive, termsRef }) {
     if (!entry || !el) return;
     entry.containerEl = el;
 
-    // Apri xterm nel container (solo se non già aperto).
+    // Open xterm in the container (only if not already open).
     if (!entry.term.element || !entry.term.element.parentElement) {
       entry.term.open(el);
     }
@@ -340,7 +337,7 @@ function TerminalContainer({ sessionId, isActive, termsRef }) {
           ptyResize(sessionId, cols, rows).catch(() => {});
         }
       } catch {
-        /* ignore (può succedere se container 0x0) */
+        /* ignore (can happen if container is 0x0) */
       }
     };
     const t = setTimeout(sendSize, 50);

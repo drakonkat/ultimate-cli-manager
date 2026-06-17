@@ -6,10 +6,9 @@ import TerminalWindow from "./components/TerminalWindow";
 
 // Branching sull'entry point in base al label della finestra Tauri.
 // La finestra "main" monta la UCM classica; le finestre "terminal-*"
-// (aperte programmaticamente da `WebviewWindow` in TabProject con
-// label `terminal-<projectId>-<cliId>`) montano il root del terminale
-// integrato. Più finestre terminal possono coesistere, una per coppia
-// (progetto, CLI).
+// (opened programmatically from `WebviewWindow` in TabProject with
+// label `terminal-<projectId>-<cliId>`) mount the integrated terminal
+// root. Multiple terminal windows can coexist, one per pair (project, CLI).
 //
 // Questo evita di avere due HTML / due Vite entry point e tiene il
 // bundle unico.
@@ -24,10 +23,10 @@ function pickRoot() {
     }
     return <App />;
   } catch (e) {
-    // Fallback: se per qualche motivo l'API Tauri non è disponibile
-    // (es. ambiente non-Tauri), monta App comunque così la UI non è
-    // completamente rotta. Logghiamo l'errore per diagnosi.
-    console.error("[main.jsx] Errore lettura window label:", e);
+    // Fallback: if the Tauri API is unavailable for any reason
+    // (e.g. non-Tauri environment), still mount App so the UI isn't
+    // completely broken. We log the error for diagnostics.
+    console.error("[main.jsx] Error reading window label:", e);
     return <App />;
   }
 }

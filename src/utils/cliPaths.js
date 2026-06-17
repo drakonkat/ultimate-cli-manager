@@ -26,9 +26,9 @@ export const CHARACTER_PATHS = {};
 export const CHARACTER_JSON_PATHS = {};
 export const MCP_CONFIG_PATHS = {};
 
-// UCM_INSTRUCTIONS_FILE è un singolo path (non una mappa), ma cambia dopo init.
-// Usiamo `let` + export: ES modules hanno live bindings, quindi chi importa
-// vedrà il valore aggiornato quando viene riassegnato.
+// UCM_INSTRUCTIONS_FILE is a single path (not a map), but changes after init.
+// We use `let` + export: ES modules have live bindings, so importers
+// will see the updated value when it's reassigned.
 export let UCM_INSTRUCTIONS_FILE = '';
 export let UCM_TEMPLATE_DIR = '';
 

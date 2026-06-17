@@ -6,9 +6,9 @@ import { CLI_LIST } from '../utils/cliDetector';
  *   - pallino stato (running / starting / idle / error)
  *   - icona CLI + nome abbreviato
  *   - path abbreviato
- *   - bottone × per chiudere la tab
+ *   - × button to close the tab
  *
- * Più un bottone "+ Add tab" a destra per aprire una nuova sessione.
+ * Plus a "+ Add tab" button on the right to open a new session.
  *
  * Props:
  *   - tabs:        Array<{ sessionId, cliId, name, path, status }>

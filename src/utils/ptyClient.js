@@ -116,8 +116,8 @@ export async function ptyKill(sessionId) {
 }
 
 /**
- * Sottoscrivi agli eventi PTY per una data sessione.
- * Ricevi callback con shape `{ kind, ...payload }` dove `kind` è
+ * Subscribe to PTY events for a given session.
+ * Receive callbacks with shape `{ kind, ...payload }` where `kind` is
  * `'data' | 'exit' | 'error'`.
  *
  * @param {string} sessionId

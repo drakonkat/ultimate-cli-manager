@@ -100,8 +100,8 @@ export async function propagateToCLIs(selectedCLIs, mcpServers, conflictResoluti
 }
 
 /**
- * Rileva i conflitti (CLI con config esistente) prima di propagare.
- * Ritorna array di cliId che hanno già una config.
+ * Detects conflicts (CLI with existing config) before propagating.
+ * Returns array of cliId that already have a config.
  */
 export async function detectConflicts(selectedCLIs) {
   const conflicts = [];
@@ -137,8 +137,8 @@ async function writeAgentFile(cliId, agentName, content) {
 }
 
 /**
- * Verifica se esiste almeno un file agent da propagare per una CLI.
- * Ritorna true se l'agentName è già presente nel path.
+ * Checks if at least one agent file exists to propagate for a CLI.
+ * Returns true if agentName is already present in the path.
  */
 async function agentExists(cliId, agentName) {
   if (!supportsAgents(cliId)) return false;
@@ -329,7 +329,7 @@ async function writeCharacterFile(filePath, content) {
  */
 async function updateInstructionsField(jsonPath, targetPath, shouldInclude) {
   try {
-    let json = {};
+    let json;
     try {
       const content = await invoke('read_file', { path: jsonPath });
       json = JSON.parse(content);
@@ -415,7 +415,7 @@ export async function propagateCharacterToCLIs(selectedCLIs, instructions, confl
         await invoke('ensure_dir', { path: UCM_INSTRUCTIONS_FILE.replace(/[^\\]+$/, '') });
         await invoke('write_file', { path: UCM_INSTRUCTIONS_FILE, content });
       } catch (e) {
-        results.push({ cliId, status: 'error', reason: `Scrittura file istruzioni: ${e}` });
+        results.push({ cliId, status: 'error', reason: `Failed to write instructions file: ${e}` });
         continue;
       }
       // Aggiorna il campo instructions del JSON
