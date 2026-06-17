@@ -3,7 +3,7 @@ import { loadTemplate } from '../utils/templateManager';
 import { detectAllCLIs, CLI_LIST } from '../utils/cliDetector';
 import { TEMPLATE_DIR } from '../utils/templateManager';
 
-function TabPanoramica({ selectedCLIs }) {
+function TabPanoramica() {
   const [template, setTemplate] = useState(null);
   const [installStatus, setInstallStatus] = useState({});
 
@@ -34,12 +34,10 @@ function TabPanoramica({ selectedCLIs }) {
           <ul className="overview-cli-list">
             {CLI_LIST.map((cli) => {
               const installed = installStatus[cli.id];
-              const selected = selectedCLIs.includes(cli.id);
               return (
-                <li key={cli.id} className={selected ? 'selected' : ''}>
+                <li key={cli.id}>
                   <span>{cli.icon} {cli.name}</span>
                   <span className={`status-dot ${installed === true ? 'installed' : installed === false ? 'not-installed' : 'unknown'}`} />
-                  {selected && <span className="sel-badge">selected</span>}
                 </li>
               );
             })}

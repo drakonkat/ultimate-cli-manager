@@ -1,29 +1,43 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /**
- * Rileva se una CLI è installata controllando i path standard Windows.
- * @param {string} cliId - ID della CLI (claude, junie, cline, kilo, opencode)
- * @returns {Promise<boolean>} true se installata
+ * Cache in-memory per i risultati di detectAllCLIs().
+ * Si invalida automaticamente dopo CACHE_TTL_MS millisecondi.
+ */
+const CLI_CACHE_TTL_MS = 30_000; // 30 secondi
+let _cliCache = { result: null, timestamp: 0 };
+
+/**
+ * Detects if a CLI is installed by checking standard Windows paths.
+ * @param {string} cliId - CLI ID (claude, junie, cline, kilo, opencode)
+ * @returns {Promise<boolean>} true if installed
  */
 export async function detectCLI(cliId) {
   try {
     return await invoke('check_cli', { cliId });
   } catch (e) {
-    console.error(`Errore rilevamento ${cliId}:`, e);
+    console.error(`Error detecting ${cliId}:`, e);
     return false;
   }
 }
 
 /**
- * Rileva tutte le CLI supportate in parallelo.
+ * Detects all supported CLIs in parallel.
+ * Results cached for CACHE_TTL_MS to avoid re-detections on tab
+ * switch (UI no longer blocks).
  * @returns {Promise<{claude: boolean, junie: boolean, cline: boolean, kilo: boolean, opencode: boolean}>}
  */
 export async function detectAllCLIs() {
+  const now = Date.now();
+  if (_cliCache.result && now - _cliCache.timestamp < CLI_CACHE_TTL_MS) {
+    return _cliCache.result;
+  }
   const ids = ['claude', 'junie', 'cline', 'kilo', 'opencode'];
   const results = await Promise.all(
     ids.map(async (id) => [id, await detectCLI(id)])
   );
-  return Object.fromEntries(results);
+  _cliCache = { result: Object.fromEntries(results), timestamp: now };
+  return _cliCache.result;
 }
 
 export const CLI_LIST = [

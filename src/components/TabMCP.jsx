@@ -38,7 +38,14 @@ function serializeEnv(env) {
 // CLI che supportano MCP come sorgente di import
 const IMPORTABLE_CLIS_MCP = ['claude', 'junie', 'cline'];
 
-function TabMCP({ selectedCLIs }) {
+// Tutte le CLI che supportano MCP (quindi tutte quelle con MCP_CONFIG_PATHS non null)
+function getAllMcpCLIs() {
+  return Object.entries(MCP_CONFIG_PATHS)
+    .filter(([_, path]) => path != null)
+    .map(([id, _]) => id);
+}
+
+function TabMCP() {
   const [template, setTemplate] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingName, setEditingName] = useState(null);
@@ -96,8 +103,9 @@ function TabMCP({ selectedCLIs }) {
   };
 
   const handlePropagate = async () => {
-    if (selectedCLIs.length === 0) {
-      alert('Select at least one CLI in the sidebar');
+    const allMcpCLIs = getAllMcpCLIs();
+    if (allMcpCLIs.length === 0) {
+      alert('No CLI supports MCP');
       return;
     }
     if (Object.keys(template.mcp).length === 0) {
@@ -108,7 +116,7 @@ function TabMCP({ selectedCLIs }) {
     setPropagating(true);
     setPropagationResults(null);
 
-    const conflicts = await detectConflicts(selectedCLIs);
+    const conflicts = await detectConflicts(allMcpCLIs);
 
     if (conflicts.length > 0) {
       setConflictDialog({ conflicts, pending: true });
@@ -116,7 +124,7 @@ function TabMCP({ selectedCLIs }) {
       return;
     }
 
-    const results = await propagateToCLIs(selectedCLIs, template.mcp, {});
+    const results = await propagateToCLIs(allMcpCLIs, template.mcp, {});
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -124,14 +132,16 @@ function TabMCP({ selectedCLIs }) {
   const handleConflictResolve = async (resolutions) => {
     setConflictDialog(null);
     setPropagating(true);
-    const results = await propagateToCLIs(selectedCLIs, template.mcp, resolutions);
+    const allMcpCLIs = getAllMcpCLIs();
+    const results = await propagateToCLIs(allMcpCLIs, template.mcp, resolutions);
     setPropagationResults(results);
     setPropagating(false);
   };
 
   const handleReadAll = async () => {
+    const allMcpCLIs = getAllMcpCLIs();
     const results = {};
-    for (const cliId of selectedCLIs) {
+    for (const cliId of allMcpCLIs) {
       if (!MCP_CONFIG_PATHS[cliId]) {
         results[cliId] = { exists: false, reason: 'CLI does not support MCP' };
         continue;
@@ -192,12 +202,13 @@ function TabMCP({ selectedCLIs }) {
   if (!template) return <div className="tab-panel"><p>Loading template...</p></div>;
 
   const mcpEntries = Object.entries(template.mcp || {});
+  const allMcpCLIs = getAllMcpCLIs();
 
   return (
     <div className="tab-panel">
       <h3>🔌 MCP Management</h3>
       <p>
-        Template: {mcpEntries.length} server(s) | Selected CLIs: {selectedCLIs.length}
+        Template: {mcpEntries.length} server(s) | Target CLIs: {allMcpCLIs.length}
       </p>
 
       <form onSubmit={handleSubmit} className="mcp-form">
@@ -317,14 +328,13 @@ function TabMCP({ selectedCLIs }) {
         <button
           className="btn-propagate"
           onClick={handlePropagate}
-          disabled={propagating || selectedCLIs.length === 0}
+          disabled={propagating || mcpEntries.length === 0}
         >
-          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${selectedCLIs.length} CLI(s)`}
+          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${allMcpCLIs.length} CLI(s)`}
         </button>
         <button
           className="btn-read"
           onClick={handleReadAll}
-          disabled={selectedCLIs.length === 0}
         >
           📂 Read existing configs
         </button>

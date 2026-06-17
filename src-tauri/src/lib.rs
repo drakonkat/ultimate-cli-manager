@@ -1,9 +1,15 @@
 use tauri_plugin_opener::open_url;
+use tauri::{Manager, Emitter, State};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+mod pty_manager;
+mod tray;
+use pty_manager::{PtyState, PtyStateHandle};
 
 // ======================================================================
 // UserPaths: SINGLE SOURCE OF TRUTH per i path utente delle CLI.
@@ -293,11 +299,480 @@ fn install_cli(cli_id: &str) -> Result<String, String> {
     }
 }
 
+/// Lista di CLI id accettati dal comando `run_cli`. Coincide con
+/// `CLI_LIST` in `src/utils/cliDetector.js` e con i branch di
+/// `check_cli` / `install_cli` nel backend.
+const RUN_CLI_WHITELIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
+
+/// Apre una nuova finestra PowerShell persistente, fa `cd <project_path>`
+/// e lancia il comando della CLI scelta. La finestra resta aperta
+/// (parametro `-NoExit`), così l'utente può continuare a interagire
+/// con la CLI dopo l'avvio.
+///
+/// Usato dalla tab "Project" (`src/components/TabProject.jsx`).
+/// Usa `.spawn()` (non `.output()` come `install_cli`) perché NON
+/// vogliamo bloccare il thread della UI Tauri.
+#[tauri::command]
+fn run_cli(cli_id: &str, project_path: &str) -> Result<(), String> {
+    // 1. Whitelist del cli_id.
+    if !RUN_CLI_WHITELIST.contains(&cli_id) {
+        return Err(format!("CLI sconosciuta: {}", cli_id));
+    }
+
+    // 2. Validazione del path: deve esistere ed essere una directory.
+    let path = Path::new(project_path);
+    if !path.exists() {
+        return Err(format!("Il path non esiste: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Il path non è una directory: {}", project_path));
+    }
+
+    // 3. Comando PowerShell: `cd '<path>'; <cli_id>`. Le singole attorno
+    //    al path gestiscono path con spazi (es. `C:\My Projects\…`).
+    //    `-NoExit` mantiene la finestra aperta dopo `claude`/`kilo`/ecc.
+    let ps_command = format!("cd '{}'; {}", project_path, cli_id);
+
+    Command::new("powershell.exe")
+        .args(["-NoExit", "-Command", &ps_command])
+        .spawn()
+        .map_err(|e| format!("Impossibile avviare PowerShell: {}", e))?;
+
+    Ok(())
+}
+
+/// Mappa editor_id → comando binario. Coincide con `EDITOR_LIST`
+/// in `src/utils/editorDetector.js` (frontend).
+const EDITOR_WHITELIST: &[(&str, &str)] = &[
+    ("vscode",   "code"),
+    ("cursor",   "cursor"),
+    ("intellij", "idea"),
+    ("webstorm", "webstorm"),
+];
+
+/// Cache degli editor rilevati. Viene popolata in background all'avvio
+/// dell'app e poi servita istantaneamente alla UI senza blocchi IPC.
+struct EditorCache {
+    /// Risultato della detection: editor_id → installato (sì/no).
+    /// None = detection ancora in corso.
+    result: Option<HashMap<String, bool>>,
+}
+
+impl EditorCache {
+    fn new() -> Self {
+        Self { result: None }
+    }
+}
+
+/// Esegue la detection di un singolo editor (stessa logica di `check_editor`).
+/// Wrapper interno usato da `detect_all_editors_background`.
+fn do_check_editor(editor_id: &str) -> bool {
+    let cmd = match EDITOR_WHITELIST.iter().find(|(id, _)| *id == editor_id) {
+        Some((_, c)) => *c,
+        None => return false,
+    };
+
+    #[cfg(target_os = "windows")]
+    let output = Command::new("where").arg(cmd).output();
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("which").arg(cmd).output();
+
+    output.map(|o| o.status.success()).unwrap_or(false)
+}
+
+/// Popola la cache degli editor in un thread in background.
+/// Chiamata da `setup()` all'avvio dell'app.
+fn detect_all_editors_background(cache: Arc<Mutex<EditorCache>>) {
+    std::thread::spawn(move || {
+        let mut results = HashMap::new();
+        for (id, _) in EDITOR_WHITELIST {
+            results.insert(id.to_string(), do_check_editor(id));
+        }
+        let mut guard = cache.lock().unwrap();
+        guard.result = Some(results);
+    });
+}
+
+/// Restituisce lo stato di tutti gli editor in un singolo IPC.
+/// Se la detection in background è già completata, ritorna subito.
+/// Se ancora in corso, blocca max ~100ms per dare tempo al thread
+/// di completare (gli editor sono pochi e `where` è veloce).
+/// In ogni caso la chiamata successiva sarà istantanea (cache in Rust).
+#[tauri::command]
+fn get_all_editors_status(cache: State<Arc<Mutex<EditorCache>>>) -> HashMap<String, bool> {
+    let guard = cache.lock().unwrap();
+    guard.result.clone().unwrap_or_else(|| {
+        // Fallback: detection sincrona se il background non ha finito.
+        // Succede solo al primo accesso prima che il thread completi.
+        let mut results = HashMap::new();
+        for (id, _) in EDITOR_WHITELIST {
+            results.insert(id.to_string(), do_check_editor(id));
+        }
+        results
+    })
+}
+
+/// Apre il progetto nell'editor/IDE specificato, passando il path come
+/// argomento. L'editor resta in foreground e l'utente può interagire
+/// con la cartella aperta.
+///
+/// Usato dalla tab "Project" (`src/components/TabProject.jsx`) come
+/// alternativa al flusso CLI (che apre una PowerShell). Qui non serve
+/// PowerShell: il comando binario si lancia direttamente.
+#[tauri::command]
+fn open_in_editor(editor_id: &str, project_path: &str) -> Result<(), String> {
+    // 1. Whitelist del editor_id → comando binario.
+    let cmd = match EDITOR_WHITELIST.iter().find(|(id, _)| *id == editor_id) {
+        Some((_, c)) => *c,
+        None => return Err(format!("Editor sconosciuto: {}", editor_id)),
+    };
+
+    // 2. Validazione del path: deve esistere ed essere una directory.
+    let path = Path::new(project_path);
+    if !path.exists() {
+        return Err(format!("Il path non esiste: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Il path non è una directory: {}", project_path));
+    }
+
+    // 2b. Canonicalizza in full path assoluto. Necessario per
+    //     IntelliJ/WebStorm (e altri editor JetBrains) che si aspettano
+    //     un path assoluto tipo `idea "C:\Path\To\Your\Project"`.
+    //     Risolve anche `..` / `.` / symlink, e garantisce quoting
+    //     corretto anche con spazi nel path.
+    let abs_path = fs::canonicalize(path)
+        .map_err(|e| format!("Impossibile risolvere il full path: {}", e))?;
+
+    // 3. Risolvi il comando tramite `where`/`which` per ottenere il path
+    //    completo (es. `C:\Users\...\idea.cmd`). Su Windows `Command::new("idea")`
+    //    non trova il comando se manca l'estensione .cmd; usare il path
+    //    completo risolve il problema.
+    #[cfg(target_os = "windows")]
+    let full_cmd = {
+        let output = Command::new("where").arg(cmd).output()
+            .map_err(|e| format!("Errore probing editor: {}", e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Comando '{}' non trovato nel PATH. Installa l'editor o aggiungilo al PATH.",
+                cmd
+            ));
+        }
+        // Prendi la prima riga (path completo al .cmd o .exe)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.lines().next()
+            .map(|s| s.trim().to_string())
+            .ok_or_else(|| format!("Risposta 'where' vuota per '{}'", cmd))?
+    };
+    #[cfg(not(target_os = "windows"))]
+    let full_cmd = {
+        let output = Command::new("which").arg(cmd).output()
+            .map_err(|e| format!("Errore probing editor: {}", e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Comando '{}' non trovato nel PATH. Installa l'editor o aggiungilo al PATH.",
+                cmd
+            ));
+        }
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+
+    // 4. Spawn: su Windows usa `cmd.exe /c` per eseguire .cmd/.bat;
+    //    su Unix usa il comando direttamente.
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd.exe")
+            .args(["/c", &full_cmd, abs_path.to_str().unwrap_or_default()])
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare '{}': {}", full_cmd, e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new(&full_cmd)
+            .arg(&abs_path)
+            .spawn()
+            .map_err(|e| format!("Impossibile avviare '{}': {}", full_cmd, e))?;
+    }
+
+    Ok(())
+}
+
+// ======================================================================
+// PTY (terminale integrato) — 4 command che delegano a `pty_manager::*`.
+// Vedi `src/components/TerminalWindow.jsx` per il consumer frontend.
+// ======================================================================
+
+/// Apre un PTY, spawna PowerShell con `cd <path> ; <cli>` e lancia il
+/// thread reader. Ritorna `Ok(session_id)` se tutto va bene.
+#[tauri::command]
+fn pty_spawn(
+    app: tauri::AppHandle,
+    state: tauri::State<PtyStateHandle>,
+    cli_id: String,
+    project_path: String,
+    cols: u16,
+    rows: u16,
+    window_label: String,
+    session_id: String,
+) -> Result<String, String> {
+    pty_manager::spawn_pty(
+        state.inner(),
+        &app,
+        &cli_id,
+        &project_path,
+        cols,
+        rows,
+        &window_label,
+        &session_id,
+    )?;
+    Ok(session_id)
+}
+
+/// Apre o riutilizza una finestra terminale integrato per un progetto.
+/// Se la finestra `terminal-<projectId>-<cliId>` esiste già:
+///   - Porta a fuoco la finestra
+///   - Emette `terminal:add-tab` per aggiungere una nuova tab
+/// Se non esiste:
+///   - Crea una nuova WebviewWindow con URL `/?cli=<cli>&path=<path>`
+///   - Il frontend instrada automaticamente a TerminalWindow (vedi main.jsx)
+#[tauri::command]
+fn open_terminal_window(
+    app: tauri::AppHandle,
+    cli_id: String,
+    project_path: String,
+    project_id: String,
+    project_name: String,
+) -> Result<(), String> {
+    do_open_terminal_window(app, &cli_id, &project_path, &project_id, &project_name)
+}
+
+/// Implementazione condivisa per aprire la finestra terminale.
+/// Usata sia dal command `open_terminal_window` sia da tray.rs.
+pub fn do_open_terminal_window(
+    app: tauri::AppHandle,
+    cli_id: &str,
+    project_path: &str,
+    project_id: &str,
+    project_name: &str,
+) -> Result<(), String> {
+    use tauri::WebviewWindowBuilder;
+    use tauri::WebviewUrl;
+
+    let window_label = format!("terminal-{}-{}", project_id, cli_id);
+
+    // Prova a trovare una finestra esistente con questo label
+    if let Some(existing) = app.get_webview_window(&window_label) {
+        // Riporta a fuoco e aggiungi una nuova tab
+        let _ = existing.set_focus();
+        let _ = existing.emit(
+            "terminal:add-tab",
+            serde_json::json!({
+                "cliId": cli_id,
+                "projectPath": project_path
+            }),
+        );
+        return Ok(());
+    }
+
+    // CLI lookup per icona/titolo
+    let cli_obj = CLI_METADATA
+        .iter()
+        .find(|m| m.id == cli_id);
+    let title = format!(
+        "{} {} — {} [beta]",
+        cli_obj.map(|m| m.icon).unwrap_or('?'),
+        cli_obj.map(|m| m.name).unwrap_or(&cli_id),
+        project_name
+    );
+
+    // Crea nuova finestra — il browser gestisce encoding dei query params
+    let url = format!("/?cli={}&path={}", cli_id, project_path);
+
+    WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
+        .title(&title)
+        .inner_size(1100.0, 700.0)
+        .min_inner_size(600.0, 400.0)
+        .build()
+        .map_err(|e| format!("Impossibile aprire finestra terminale: {}", e))?;
+
+    Ok(())
+}
+
+/// Metadata delle CLI (id, icon, name). Usato da `open_terminal_window`.
+struct CliMeta {
+    id: &'static str,
+    icon: char,
+    name: &'static str,
+}
+
+const CLI_METADATA: &[CliMeta] = &[
+    CliMeta { id: "claude", icon: '🤖', name: "Claude" },
+    CliMeta { id: "junie", icon: '🧠', name: "Junie" },
+    CliMeta { id: "cline", icon: '⚡', name: "Cline" },
+    CliMeta { id: "kilo", icon: '⚡', name: "Kilo" },
+    CliMeta { id: "opencode", icon: '🚀', name: "OpenCode" },
+];
+
+/// Scrive `data` (input utente) nel PTY della sessione.
+#[tauri::command]
+fn pty_write(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    pty_manager::write_pty(state.inner(), &session_id, &data)
+}
+
+/// Legge il setting close_to_tray.
+#[tauri::command]
+fn get_close_to_tray() -> bool {
+    tray::settings_close_to_tray()
+}
+
+/// Scrive il setting close_to_tray.
+#[tauri::command]
+fn set_close_to_tray(value: bool) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_close_to_tray(value);
+    settings.save()
+}
+
+/// Legge il setting spawn_mode.
+#[tauri::command]
+fn get_spawn_mode() -> String {
+    tray::settings_spawn_mode()
+}
+
+/// Scrive il setting spawn_mode.
+#[tauri::command]
+fn set_spawn_mode(mode: String) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_spawn_mode(mode);
+    settings.save()
+}
+
+/// Ridimensiona il PTY (chiamato da ResizeObserver su xterm container).
+#[tauri::command]
+fn pty_resize(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty_manager::resize_pty(state.inner(), &session_id, cols, rows)
+}
+
+/// Killa il child della sessione e rimuove dallo state.
+#[tauri::command]
+fn pty_kill(
+    state: tauri::State<PtyStateHandle>,
+    session_id: String,
+) -> Result<(), String> {
+    pty_manager::kill_pty(state.inner(), &session_id)
+}
+
+/// Restituisce la lista degli UUID dei progetti da mostrare nel tray.
+/// Se vuota, significa "mostra tutti".
+#[tauri::command]
+fn get_tray_projects() -> Vec<String> {
+    tray::Settings::load().get_tray_projects().clone()
+}
+
+/// Salva la lista degli UUID dei progetti da mostrare nel tray.
+#[tauri::command]
+fn set_tray_projects(uuids: Vec<String>) -> Result<(), String> {
+    let mut settings = tray::Settings::load();
+    settings.set_tray_projects(uuids);
+    settings.save()
+}
+
+/// Restituisce tutti i progetti registrati in template.json.
+#[tauri::command]
+fn get_all_projects() -> Result<Vec<serde_json::Value>, String> {
+    tray::load_projects_from_template()
+}
+
+/// Forza il reload del menu tray riavviando l'applicazione.
+/// Viene chiamato quando l'utente modifica i checkbox in Settings.
+#[tauri::command]
+fn refresh_tray_menu(app: tauri::AppHandle) -> Result<(), String> {
+    let _projects = get_all_projects()?;
+    let _tray_projects = get_tray_projects();
+    // Riavvia l'app per ricostruire il menu tray
+    app.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_url_cmd, path_exists, check_cli, install_cli, read_file, write_file, ensure_dir, test_mcp, get_cli_paths, list_dir])
+        .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // Cleanup PTY quando l'utente chiude una qualsiasi finestra
+            // "terminal" (label dinamico `terminal-<projectId>-<cliId>`,
+            // una finestra per coppia progetto/CLI). Funziona anche su
+            // Alt+F4 / Task Manager perché Rust intercetta l'evento
+            // PRIMA che la finestra venga distrutta.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label().starts_with("terminal-") {
+                    // L'evento arriva sul `Window`, da cui possiamo
+                    // risalire all'AppHandle via `window.app_handle()`.
+                    let app_handle = window.app_handle();
+                    let state = app_handle.state::<PtyStateHandle>();
+                    pty_manager::kill_all_for_window(state.inner(), window.label());
+                } else if window.label() == "main" {
+                    // Leggi il setting close_to_tray e decidi cosa fare
+                    if tray::settings_close_to_tray() {
+                        let _ = window.hide();
+                    } else {
+                        let _ = window.close();
+                    }
+                }
+            }
+        })
+        .setup(|app| {
+            // Inserisci lo state PTY (Arc<Mutex<PtyState>>) nel container
+            // gestito da Tauri. I command lo recuperano via `tauri::State<PtyStateHandle>`.
+            app.manage::<PtyStateHandle>(Arc::new(Mutex::new(PtyState::default())));
+
+            // Cache editor: popolata in background all'avvio per non
+            // bloccare mai la UI con IPC ripetuti su TabProject.
+            let editor_cache: Arc<Mutex<EditorCache>> = Arc::new(Mutex::new(EditorCache::new()));
+            app.manage(editor_cache.clone());
+            detect_all_editors_background(editor_cache);
+
+            // Setup tray icon
+            tray::setup_tray(app)?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            open_url_cmd,
+            path_exists,
+            check_cli,
+            install_cli,
+            read_file,
+            write_file,
+            ensure_dir,
+            test_mcp,
+            get_cli_paths,
+            list_dir,
+            run_cli,
+            get_all_editors_status,
+            open_in_editor,
+            pty_spawn,
+            pty_write,
+            pty_resize,
+            pty_kill,
+            open_terminal_window,
+            get_close_to_tray,
+            set_close_to_tray,
+            get_spawn_mode,
+            set_spawn_mode,
+            get_tray_projects,
+            set_tray_projects,
+            get_all_projects,
+            refresh_tray_menu
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

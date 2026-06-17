@@ -33,7 +33,14 @@ const EMPTY_FORM = { name: '', description: '', content: '' };
 // CLI che supportano agents come sorgente di import
 const IMPORTABLE_CLIS_AGENTS = ['claude', 'opencode', 'kilo', 'junie'];
 
-function TabAgents({ selectedCLIs }) {
+// Tutte le CLI che supportano agents
+function getAllAgentCLIs() {
+  return Object.entries(AGENTS_PATHS)
+    .filter(([_, path]) => path != null)
+    .map(([id, _]) => id);
+}
+
+function TabAgents() {
   const [template, setTemplate] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingName, setEditingName] = useState(null);
@@ -79,30 +86,26 @@ function TabAgents({ selectedCLIs }) {
   };
 
   const handlePropagate = async () => {
-    if (selectedCLIs.length === 0) {
-      alert('Select at least one CLI in the sidebar');
+    const allAgentCLIs = getAllAgentCLIs();
+    if (allAgentCLIs.length === 0) {
+      alert('No CLI supports agents');
       return;
     }
     if (Object.keys(template.agents || {}).length === 0) {
       alert('Agents template is empty. Add one above.');
       return;
     }
-    const targetCLIs = selectedCLIs.filter(supportsAgents);
-    if (targetCLIs.length === 0) {
-      alert('None of the selected CLIs support agents.');
-      return;
-    }
 
     setPropagating(true);
     setPropagationResults(null);
-    const conflicts = await detectAgentConflicts(targetCLIs, template.agents);
+    const conflicts = await detectAgentConflicts(allAgentCLIs, template.agents);
     if (Object.keys(conflicts).length > 0) {
       setConflictDialog({ conflicts });
       setPropagating(false);
       return;
     }
 
-    const results = await propagateAgentsToCLIs(targetCLIs, template.agents, {});
+    const results = await propagateAgentsToCLIs(allAgentCLIs, template.agents, {});
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -110,8 +113,8 @@ function TabAgents({ selectedCLIs }) {
   const handleConflictResolve = async (resolutions) => {
     setConflictDialog(null);
     setPropagating(true);
-    const targetCLIs = selectedCLIs.filter(supportsAgents);
-    const results = await propagateAgentsToCLIs(targetCLIs, template.agents, resolutions);
+    const allAgentCLIs = getAllAgentCLIs();
+    const results = await propagateAgentsToCLIs(allAgentCLIs, template.agents, resolutions);
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -157,15 +160,15 @@ function TabAgents({ selectedCLIs }) {
   if (!template) return <div className="tab-panel"><p>Loading template...</p></div>;
 
   const agents = Object.entries(template.agents || {});
-  const targetCLIs = selectedCLIs.filter(supportsAgents);
+  const allAgentCLIs = getAllAgentCLIs();
 
   return (
     <div className="tab-panel">
       <h3>🤖 Agents Management</h3>
       <p>
-        Template: {agents.length} agent(s) | Selected CLIs that support agents: {targetCLIs.length}
-        {targetCLIs.length < selectedCLIs.length && (
-          <span className="hint"> ({selectedCLIs.length - targetCLIs.length} selected do not support agents, e.g. Cline)</span>
+        Template: {agents.length} agent(s) | Target CLIs: {allAgentCLIs.length}
+        {!allAgentCLIs.includes('cline') && (
+          <span className="hint"> (Cline does not support agents)</span>
         )}
       </p>
 
@@ -248,9 +251,9 @@ function TabAgents({ selectedCLIs }) {
         <button
           className="btn-propagate"
           onClick={handlePropagate}
-          disabled={propagating || selectedCLIs.length === 0 || agents.length === 0}
+          disabled={propagating || agents.length === 0}
         >
-          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${targetCLIs.length} CLI(s)`}
+          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${allAgentCLIs.length} CLI(s)`}
         </button>
         <select
           value={importSourceCli}

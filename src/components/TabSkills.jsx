@@ -33,7 +33,14 @@ const EMPTY_FORM = { name: '', description: '', content: '' };
 // CLI che supportano skills come sorgente di import
 const IMPORTABLE_CLIS_SKILLS = ['claude', 'opencode', 'kilo', 'junie'];
 
-function TabSkills({ selectedCLIs }) {
+// Tutte le CLI che supportano skills
+function getAllSkillCLIs() {
+  return Object.entries(SKILLS_PATHS)
+    .filter(([_, path]) => path != null)
+    .map(([id, _]) => id);
+}
+
+function TabSkills() {
   const [template, setTemplate] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingName, setEditingName] = useState(null);
@@ -79,30 +86,26 @@ function TabSkills({ selectedCLIs }) {
   };
 
   const handlePropagate = async () => {
-    if (selectedCLIs.length === 0) {
-      alert('Select at least one CLI in the sidebar');
+    const allSkillCLIs = getAllSkillCLIs();
+    if (allSkillCLIs.length === 0) {
+      alert('No CLI supports skills');
       return;
     }
     if (Object.keys(template.skills || {}).length === 0) {
       alert('Skills template is empty. Add one above.');
       return;
     }
-    const targetCLIs = selectedCLIs.filter(supportsSkills);
-    if (targetCLIs.length === 0) {
-      alert('None of the selected CLIs support skills.');
-      return;
-    }
 
     setPropagating(true);
     setPropagationResults(null);
-    const conflicts = await detectSkillConflicts(targetCLIs, template.skills);
+    const conflicts = await detectSkillConflicts(allSkillCLIs, template.skills);
     if (Object.keys(conflicts).length > 0) {
       setConflictDialog({ conflicts });
       setPropagating(false);
       return;
     }
 
-    const results = await propagateSkillsToCLIs(targetCLIs, template.skills, {});
+    const results = await propagateSkillsToCLIs(allSkillCLIs, template.skills, {});
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -110,8 +113,8 @@ function TabSkills({ selectedCLIs }) {
   const handleConflictResolve = async (resolutions) => {
     setConflictDialog(null);
     setPropagating(true);
-    const targetCLIs = selectedCLIs.filter(supportsSkills);
-    const results = await propagateSkillsToCLIs(targetCLIs, template.skills, resolutions);
+    const allSkillCLIs = getAllSkillCLIs();
+    const results = await propagateSkillsToCLIs(allSkillCLIs, template.skills, resolutions);
     setPropagationResults(results);
     setPropagating(false);
   };
@@ -160,15 +163,15 @@ function TabSkills({ selectedCLIs }) {
   if (!template) return <div className="tab-panel"><p>Loading template...</p></div>;
 
   const skills = Object.entries(template.skills || {});
-  const targetCLIs = selectedCLIs.filter(supportsSkills);
+  const allSkillCLIs = getAllSkillCLIs();
 
   return (
     <div className="tab-panel">
       <h3>🛠️ Skills Management</h3>
       <p>
-        Template: {skills.length} skill(s) | Selected CLIs that support skills: {targetCLIs.length}
-        {targetCLIs.length < selectedCLIs.length && (
-          <span className="hint"> ({selectedCLIs.length - targetCLIs.length} selected do not support skills, e.g. Cline)</span>
+        Template: {skills.length} skill(s) | Target CLIs: {allSkillCLIs.length}
+        {!allSkillCLIs.includes('cline') && (
+          <span className="hint"> (Cline does not support skills)</span>
         )}
       </p>
 
@@ -251,9 +254,9 @@ function TabSkills({ selectedCLIs }) {
         <button
           className="btn-propagate"
           onClick={handlePropagate}
-          disabled={propagating || selectedCLIs.length === 0 || skills.length === 0}
+          disabled={propagating || skills.length === 0}
         >
-          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${targetCLIs.length} CLI(s)`}
+          {propagating ? '⏳ Propagating...' : `🚀 Propagate to ${allSkillCLIs.length} CLI(s)`}
         </button>
         <select
           value={importSourceCli}

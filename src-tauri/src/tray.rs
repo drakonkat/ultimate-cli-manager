@@ -1,0 +1,451 @@
+//! tray — system tray management for Ultimate CLI Manager.
+//!
+//! Creates a system tray icon with a right-click menu:
+//!   - "Apri UCM"              → show/focus main window
+//!   - Separator
+//!   - "Spawn <CLI>" (x5)      → directory picker → run_cli
+//!   - Separator
+//!   - "Esci"                  → quit app
+//!
+//! Left-click on the tray icon shows/focuses the main window.
+//! Closing the main window hides it to tray (app keeps running).
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager,
+};
+use tauri_plugin_dialog::DialogExt;
+
+// ======================================================================
+// Constants
+// ======================================================================
+
+pub const CLI_LIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
+
+const SETTINGS_FILE: &str = ".ucm/settings.json";
+
+// ======================================================================
+// Settings (path memory + close_to_tray + tray_projects + spawn_mode)
+// ======================================================================
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+pub struct Settings {
+    last_spawn_paths: HashMap<String, String>,
+    #[serde(default = "default_close_to_tray")]
+    close_to_tray: bool,
+    #[serde(default)]
+    tray_projects: Vec<String>,
+    #[serde(default = "default_spawn_mode")]
+    spawn_mode: String,
+}
+
+fn default_close_to_tray() -> bool {
+    true
+}
+
+fn default_spawn_mode() -> String {
+    "terminal".to_string()
+}
+
+impl Settings {
+    pub fn load() -> Self {
+        let Some(path) = settings_path() else {
+            return Self::default();
+        };
+        if path.exists() {
+            fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn save(&self) -> Result<(), String> {
+        let Some(path) = settings_path() else {
+            return Err("Impossibile determinare il path delle settings".into());
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        fs::write(&path, json).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn set_last_path(&mut self, cli_id: &str, path: &str) {
+        self.last_spawn_paths.insert(cli_id.to_string(), path.to_string());
+    }
+
+    pub fn close_to_tray(&self) -> bool {
+        self.close_to_tray
+    }
+
+    pub fn set_close_to_tray(&mut self, value: bool) {
+        self.close_to_tray = value;
+    }
+
+    pub fn get_tray_projects(&self) -> &Vec<String> {
+        &self.tray_projects
+    }
+
+    pub fn set_tray_projects(&mut self, uuids: Vec<String>) {
+        self.tray_projects = uuids;
+    }
+
+    pub fn get_spawn_mode(&self) -> &str {
+        &self.spawn_mode
+    }
+
+    pub fn set_spawn_mode(&mut self, mode: String) {
+        self.spawn_mode = mode;
+    }
+}
+
+fn settings_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(SETTINGS_FILE))
+}
+
+/// Returns the current close_to_tray setting.
+pub fn settings_close_to_tray() -> bool {
+    Settings::load().close_to_tray()
+}
+
+/// Returns the current spawn_mode setting.
+pub fn settings_spawn_mode() -> String {
+    Settings::load().get_spawn_mode().to_string()
+}
+
+// ======================================================================
+// Tray setup
+// ======================================================================
+
+/// Sets up the system tray. Called once from `lib.rs::setup()`.
+pub fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Leggi progetti da template.json
+    let projects = load_projects_from_template().unwrap_or_default();
+
+    // Leggi tray_projects da settings
+    let settings = Settings::load();
+    let tray_projects = settings.get_tray_projects().clone();
+
+    // Costruisci menu
+    let menu = build_tray_menu(app, &projects, &tray_projects)?;
+
+    // ---- Load tray icon ----
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or("No default window icon set in tauri.conf.json")?;
+
+    // ---- Build tray icon ----
+    let _tray = TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("Ultimate CLI Manager")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(move |app, event| {
+            let id = event.id().as_ref().to_string();
+            let id_str: &str = &id;
+            match id_str {
+                "open_ucm" => {
+                    show_main_window(app);
+                }
+                s if s.starts_with("spawn_") => {
+                    let cli_id = s.strip_prefix("spawn_").unwrap().to_string();
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = ask_path_and_spawn(&app_clone, &cli_id).await {
+                            eprintln!("[tray] spawn error: {}", e);
+                        }
+                    });
+                }
+                s if s.starts_with("project_") => {
+                    let id_clone = s.to_string();
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = handle_project_spawn(&app_clone, &id_clone).await {
+                            eprintln!("[tray] project spawn error: {}", e);
+                        }
+                    });
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+/// Costruisce il menu tray completo con sottomenu Projects dinamico.
+fn build_tray_menu(
+    app: &mut tauri::App,
+    projects: &[serde_json::Value],
+    tray_projects: &[String],
+) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
+    let open_ucm = MenuItem::with_id(app, "open_ucm", "Apri UCM", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let projects_submenu = build_projects_submenu(app, projects, tray_projects)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Esci", true, None::<&str>)?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open_ucm,
+            &sep1,
+            &projects_submenu,
+            &sep2,
+            &quit,
+        ],
+    )?;
+
+    Ok(menu)
+}
+
+/// Costruisce il sottomenu "Projects" con i progetti filtrati.
+fn build_projects_submenu(
+    app: &mut tauri::App,
+    projects: &[serde_json::Value],
+    tray_projects: &[String],
+) -> Result<Submenu<tauri::Wry>, Box<dyn std::error::Error>> {
+    let submenu = Submenu::with_id_and_items(
+        app,
+        "projects",
+        "Projects",
+        true,
+        &[],
+    )?;
+
+    let visible: Vec<&serde_json::Value> = if tray_projects.is_empty() {
+        projects.iter().collect()
+    } else {
+        projects
+            .iter()
+            .filter(|p| {
+                p.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| tray_projects.contains(&id.to_string()))
+                    .unwrap_or(false)
+            })
+            .collect()
+    };
+
+    if visible.is_empty() {
+        let no_proj =
+            MenuItem::with_id(app, "no_projects", "Nessun progetto", false, None::<&str>)?;
+        submenu.append(&no_proj)?;
+    } else {
+        for project in visible {
+            let name = project
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let id = project
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let proj_submenu = Submenu::with_id_and_items(
+                app,
+                &format!("proj_{}", id),
+                name,
+                true,
+                &[],
+            )?;
+
+            for cli_id in CLI_LIST {
+                let label = format!("Spawn {}", capitalize(cli_id));
+                let item_id = format!("project_{}_spawn_{}", id, cli_id);
+                let item = MenuItem::with_id(app, &item_id, &label, true, None::<&str>)?;
+                proj_submenu.append(&item)?;
+            }
+
+            submenu.append(&proj_submenu)?;
+        }
+    }
+
+    Ok(submenu)
+}
+
+// ======================================================================
+// Helpers
+// ======================================================================
+
+/// Legge i progetti da template.json.
+pub fn load_projects_from_template() -> Result<Vec<serde_json::Value>, String> {
+    let template_path = dirs::home_dir()
+        .ok_or("Impossibile determinare la home")?
+        .join(".ucm")
+        .join("template.json");
+
+    let content = fs::read_to_string(&template_path)
+        .map_err(|e| format!("Errore lettura template.json: {}", e))?;
+
+    let template: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Errore parsing template.json: {}", e))?;
+
+    let projects = template
+        .get("projects")
+        .and_then(|p| p.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(projects)
+}
+
+/// Capitalize first letter.
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+/// Shows (or restores) the main window and brings it to focus.
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Genera un ID unico basato su timestamp per spawn senza progetto.
+fn generate_unique_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("tray-{}", now.as_nanos())
+}
+
+/// Gestisce il click su un sottocomando "project_<uuid>_spawn_<cli_id>".
+async fn handle_project_spawn(app: &AppHandle, id: &str) -> Result<(), String> {
+    let Some(spawn_pos) = id.find("_spawn_") else {
+        return Err(format!("Formato id non valido: {}", id));
+    };
+
+    let uuid_part = &id["project_".len()..spawn_pos];
+    let cli_id = &id[spawn_pos + "_spawn_".len()..];
+
+    let projects = load_projects_from_template()?;
+    let project = projects
+        .iter()
+        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(uuid_part))
+        .ok_or_else(|| format!("Progetto {} non trovato", uuid_part))?;
+
+    let path = project
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or("Path progetto mancante")?;
+
+    let project_name = project
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+
+    let spawn_mode = settings_spawn_mode();
+
+    if spawn_mode == "terminal" {
+        super::do_open_terminal_window(
+            app.clone(),
+            cli_id,
+            path,
+            uuid_part,
+            project_name,
+        )?;
+    } else {
+        spawn_cli(cli_id, path)?;
+    }
+
+    Ok(())
+}
+
+/// Shows a directory picker dialog, then spawns the CLI.
+async fn ask_path_and_spawn(app: &AppHandle, cli_id: &str) -> Result<(), String> {
+    let mut settings = Settings::load();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let title = format!("Select project folder for {}", capitalize(cli_id));
+
+    app.dialog()
+        .file()
+        .set_title(&title)
+        .pick_folder(move |path| {
+            let _ = tx.send(path);
+        });
+
+    let picked = rx.recv();
+
+    if let Ok(Some(path)) = picked {
+        let path_str = path.to_string();
+
+        settings.set_last_path(cli_id, &path_str);
+        if let Err(e) = settings.save() {
+            eprintln!("[tray] warning: failed to save settings: {}", e);
+        }
+
+        let spawn_mode = settings_spawn_mode();
+
+        if spawn_mode == "terminal" {
+            let unique_id = generate_unique_id();
+            super::do_open_terminal_window(
+                app.clone(),
+                cli_id,
+                &path_str,
+                &unique_id,
+                "Tray",
+            )?;
+        } else {
+            if let Err(e) = spawn_cli(cli_id, &path_str) {
+                eprintln!("[tray] spawn error: {}", e);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Spawns a PowerShell window with the given CLI at the specified path.
+fn spawn_cli(cli_id: &str, project_path: &str) -> Result<(), String> {
+    use std::process::Command;
+    use std::path::Path;
+
+    const WHITELIST: &[&str] = &["claude", "junie", "cline", "kilo", "opencode"];
+    if !WHITELIST.contains(&cli_id) {
+        return Err(format!("CLI sconosciuta: {}", cli_id));
+    }
+
+    let path = Path::new(project_path);
+    if !path.exists() {
+        return Err(format!("Il path non esiste: {}", project_path));
+    }
+    if !path.is_dir() {
+        return Err(format!("Il path non è una directory: {}", project_path));
+    }
+
+    let ps_command = format!("cd '{}'; {}", project_path, cli_id);
+    Command::new("powershell.exe")
+        .args(["-NoExit", "-Command", &ps_command])
+        .spawn()
+        .map_err(|e| format!("Impossibile avviare PowerShell: {}", e))?;
+
+    Ok(())
+}

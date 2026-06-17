@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { detectAllCLIs, CLI_LIST } from '../utils/cliDetector';
 import { installCLI } from '../utils/cliInstaller';
 
-function TabDocs({ selectedCLIs }) {
+function TabDocs() {
   const [installStatus, setInstallStatus] = useState({});
   const [installing, setInstalling] = useState(null);
   const [output, setOutput] = useState('');
@@ -35,10 +35,6 @@ function TabDocs({ selectedCLIs }) {
     }
   };
 
-  const filteredDocs = selectedCLIs.length > 0
-    ? CLI_LIST.filter(doc => selectedCLIs.includes(doc.id))
-    : CLI_LIST;
-
   return (
     <div className="tab-panel">
       <div className="docs-header">
@@ -48,7 +44,7 @@ function TabDocs({ selectedCLIs }) {
       <p>CLIs installed: {Object.values(installStatus).filter(Boolean).length} / 5</p>
 
       <div className="docs-grid">
-        {filteredDocs.map((doc) => {
+        {CLI_LIST.map((doc) => {
           const installed = installStatus[doc.id];
           const isInstalling = installing === doc.id;
           return (
